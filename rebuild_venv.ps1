@@ -1,7 +1,7 @@
 # PowerShell script to rebuild virtual environment from requirements.txt
 # This removes the existing .venv and creates a fresh one with exact package versions
 
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = $PSScriptRoot
 $VenvPath = Join-Path $ProjectRoot ".venv"
 $RequirementsFile = Join-Path $PSScriptRoot "requirements.txt"
 
