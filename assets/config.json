@@ -1,0 +1,89 @@
+{
+    "theme": "dark",
+    "default_template_path": "assets\\templates\\sample_new.csv",
+    "output_directory": "assets\\output_files",
+    "database_path": "assets\\asset_database.db",
+    "dropdown_fields": [
+        "*Asset Type",
+        "*Manufacturer",
+        "*Model",
+        "Status",
+        "Location",
+        "Child Asset? (Y/N)",
+        "Room",
+        "System Name",
+        "Cubicle"
+    ],
+    "required_fields": [
+        "*Asset Type",
+        "*Manufacturer",
+        "*Model",
+        "Status",
+        "Serial Number",
+        "Location",
+        "Room",
+        "System Name"
+    ],
+    "excluded_fields": [
+        "Asset No.",
+        "Version"
+    ],
+    "unique_fields": [
+        "Serial Number",
+        "IP Address",
+        "Network Name",
+        "MAC Address",
+        "Phone Number",
+        "Media Control#",
+        "Tamper Seal",
+        "TSCO Control#"
+    ],
+    "monitor_primary_fields": [
+        "Serial Number",
+        "Asset No."
+    ],
+    "monitor_secondary_fields": [
+        "*Manufacturer",
+        "*Model"
+    ],
+    "monitor_tertiary_fields": [
+        "Room",
+        "Cubicle",
+        "System Name"
+    ],
+    "label_output_fields": [
+        "Asset No.",
+        "Serial Number",
+        "*Manufacturer",
+        "*Model"
+    ],
+    "hmr_fields": [
+        "Asset No.",
+        "Serial Number",
+        "*Manufacturer",
+        "*Model",
+        "Location",
+        "Room"
+    ],
+    "destruction_report_fields": [
+        "Asset No.",
+        "Serial Number",
+        "*Manufacturer",
+        "*Model",
+        "Status",
+        "Location"
+    ],
+    "bulk_update_presets": {
+        "Update Audit Date": {
+            "type": "system",
+            "fields": [
+                {
+                    "field": "Audit Date",
+                    "operation": "replace",
+                    "value": "current_date"
+                }
+            ]
+        }
+    },
+    "saved_searches": {}
+}

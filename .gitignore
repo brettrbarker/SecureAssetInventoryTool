@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Project specific
+security_reports/
+assets/output_files/exports/*
+assets/output_files/labels/*
+assets/output_files/reports/*
+assets/auto_backups/*
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
