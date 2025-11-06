@@ -1,6 +1,6 @@
 {
     "theme": "dark",
-    "default_template_path": "assets\\templates\\sample_new.csv",
+    "default_template_path": "assets/templates/default_template.csv",
     "output_directory": "assets\\output_files",
     "database_path": "assets\\asset_database.db",
     "dropdown_fields": [
