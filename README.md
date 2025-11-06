@@ -22,24 +22,28 @@ A professional desktop application for managing IT asset inventories with advanc
 - [User Guide](#-user-guide)
   - [Main Menu](#main-menu)
   - [Add New Assets](#add-new-assets)
-  - [Browse & Search Assets](#browse--search-assets)
-  - [Bulk Update Assets](#bulk-update-assets)
+  - [Browse Assets](#browse-assets)
+  - [Search/Change Assets](#searchchange-assets)
   - [Reports and Analysis](#reports-and-analysis)
-  - [Generate Barcode Labels](#generate-barcode-labels)
   - [Export Assets](#export-assets)
   - [Settings](#settings)
-- [Configuration](#-configuration)
-- [Database](#-database)
+- [Configuration](#️-configuration)
+- [Database](#️-database)
 - [Template Files](#-template-files)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [License](#-license)
+- [Acknowledgments](#-acknowledgments)
+- [Contact](#-contact)
+- [Roadmap](#️-roadmap)
+- [Version History](#-version-history)
 
 ---
 
 ## ✨ Features
 
 ### Core Functionality
+
 - **SQLite Database Backend**: Fast, reliable, and portable asset database
 - **Template-Driven Fields**: Customize asset fields via CSV templates
 - **Advanced Search**: Multi-criteria search with AND/OR logic and saved searches
@@ -48,6 +52,7 @@ A professional desktop application for managing IT asset inventories with advanc
 - **Barcode Generation**: Create Avery 5160-compatible barcode labels
 
 ### Reporting & Analysis
+
 - **Visual Analytics**: Charts and graphs for asset distribution and trends
 - **Audit Reports**: Identify assets not audited within specified timeframes
 - **Label Generation Reports**: Track label requests by date
@@ -57,6 +62,7 @@ A professional desktop application for managing IT asset inventories with advanc
 - **Destruction Certificates**: Generate asset disposal documentation. **Coming Soon**
 
 ### Advanced Features
+
 - **Auto-Backup**: Automatic database backups
 - **Error Handling**: Comprehensive error logging and recovery
 - **Keyboard Shortcuts**: Efficient navigation with keyboard accelerators
@@ -68,6 +74,7 @@ A professional desktop application for managing IT asset inventories with advanc
 ## 🚀 Installation
 
 ### Prerequisites
+
 - Python 3.11 or higher
 - Optimized for Windows 10/11
 - ~100MB of free disk space
@@ -77,10 +84,12 @@ A professional desktop application for managing IT asset inventories with advanc
 **No Python installation required!**
 
 1. **Download the latest release:**
+
    - Visit the [Releases page](https://github.com/brettrbarker/SecureAssetInventoryTool/releases)
    - Download the latest `SecureAssetInventoryTool-vX.X.XXXXXX.exe` file
-   
+
 2. **Run the application:**
+
    - Double-click the downloaded `.exe` file
    - Windows may show a security warning (click "More info" → "Run anyway")
    - The application will create necessary directories and configuration files on first run
@@ -89,15 +98,15 @@ A professional desktop application for managing IT asset inventories with advanc
 
 ### Option 2: Install from Source (All Platforms)
 
-**Quick Install**
-
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/brettrbarker/SecureAssetInventoryTool.git
    cd SecureAssetInventoryTool
    ```
 
 2. **Create a virtual environment (recommended):**
+
    ```bash
    python -m venv venv
    
@@ -109,16 +118,18 @@ A professional desktop application for managing IT asset inventories with advanc
    ```
 
 3. **Install dependencies:**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. **Run the application:**
+
    ```bash
    python main.py
    ```
 
-### Building Your Own Standalone Executable (Windows)
+### Option 3: Building Your Own Standalone Executable (Windows)
 
 For Windows users who want to build from source, use the included PowerShell build script:
 
@@ -168,6 +179,7 @@ The main menu provides access to all major functions:
 <img src="docs/screenshots/main-menu.png" alt="Main Menu" width="500">
 
 **Available Options:**
+
 - **Add New Assets**: Create individual or multiple asset entries
 - **Browse Assets**: Advanced search and asset management
 - **Export Assets Via Template**: Export full database or recent added or changed assets using template structure
@@ -201,6 +213,7 @@ The main menu provides access to all major functions:
   - Useful for adding similar items (e.g., multiple computers of same model)
 
 **Keyboard Shortcuts:**
+
 - `Ctrl+Enter`: Submit form
 - `Ctrl+Backspace`: Clear form
 
@@ -211,6 +224,7 @@ The main menu provides access to all major functions:
 **How to Use:**
 
 #### Basic Search
+
 1. Click **"Browse/Search Assets"** from main menu
 2. Click **"Search"** without any Filters to view all records (paginated)
 3. Use table controls:
@@ -218,6 +232,7 @@ The main menu provides access to all major functions:
    - Double-click row to view detailed asset information
 
 #### Advanced Search
+
 1. Click **"Add Filter"** to create search criteria
 2. Configure each filter:
    - **Field**: Select which field to search
@@ -238,6 +253,7 @@ The main menu provides access to all major functions:
 - **Pagination**: Configure items per page (50/100/200/500)
 
 **Keyboard Shortcuts:**
+
 - `Ctrl+F`: Focus on first filter
 - `Ctrl+Enter`: Execute search
 - `F5` or `Ctrl+R`: Refresh/reload data
@@ -268,12 +284,14 @@ The main menu provides access to all major functions:
 - **Field Edit**: Click **"Edit Full Asset"** to open complete asset editor
 
 **Common Use Cases:**
+
 - Update location for multiple assets during office moves
 - Change status for assets being decommissioned
 - Update audit dates while completing physical inventory
 - Assign assets to new departments or users
 
 **Keyboard Shortcuts:**
+
 - `Ctrl+Backspace`: Clear and focus search field
 - `Enter`: Execute search
 - `Ctrl+Enter`: Apply changes
@@ -285,6 +303,7 @@ The main menu provides access to all major functions:
 **Available Reports:**
 
 #### 1. Overview Dashboard
+
 - **Total asset count** and database statistics
 - **Asset distribution charts** (by type, manufacturer, location, status)
 - **Audit compliance metrics**
@@ -292,6 +311,7 @@ The main menu provides access to all major functions:
 - Click **"🔄 Refresh Dashboard"** to update data
 
 #### 2. Audit Report
+
 - Find assets **not audited** within specified days
 - Default: 365 days (customizable)
 - Results show: Asset No., Type, Manufacturer, Model, Location, Last Audit Date
@@ -299,27 +319,32 @@ The main menu provides access to all major functions:
 - **Double-click** any asset to view full details
 
 #### 3. Labels Report
+
 - Find assets with **label requests** based on date criteria
 - Filter by date range or specific dates
 - Useful for batch label printing
 - Export results or generate barcodes directly
 
 #### 4. Duplicate Detection
+
 - Identify potential **duplicate entries**
 - Search by: Serial Number, Asset Number, IP Address, MAC Address
 - Review and merge/delete duplicates
 
 #### 5. Cubicle Analysis
+
 - Analyze **asset distribution by location**
 - View assets per cubicle/room
 - Identify over/under-utilized spaces
 - Find misplaced devices by searching for cubicles that don't match expected assets
 
 #### 6. Hardware Maintenance Records (HMR) 🚧 *Coming Soon*
+
 - Generate asset hardware reports for facility entry/exit approval
 - *Note: This feature is currently under development*
 
 #### 7. Destruction Certificates 🚧 *Coming Soon*
+
 - Generate **disposal documentation**
 - Required for asset write-offs and disposal regulations
 - Includes: Asset details, destruction date, authorization
@@ -327,6 +352,7 @@ The main menu provides access to all major functions:
 - *Note: This feature is currently under development*
 
 **Features:**
+
 - **Interactive Charts**: Click elements to drill down
 - **Date Range Filters**: Flexible date selection
 - **Export Options**: Excel, CSV, PDF formats
@@ -340,17 +366,20 @@ The main menu provides access to all major functions:
 **Export Options:**
 
 #### 1. Export Database via Template
+
 - Exports **all active assets** using template column order
 - Creates CSV file with full dataset
 - Includes all fields from template
 - Ready for backup or external analysis
 
 #### 2. Export Search Results
+
 - Export **filtered results** from Browse/Search window
 - Only includes assets matching current search criteria
 - Useful for targeted reports
 
 **How to Use:**
+
 1. Click **"Export Assets via Template"** or use Export button in other windows
 2. Choose destination folder and filename
 3. Select format (CSV or Excel)
@@ -358,6 +387,7 @@ The main menu provides access to all major functions:
 5. Confirmation message shows file location
 
 **Features:**
+
 - **Large Dataset Support**: Efficiently handles thousands of records
 - **Template Consistency**: Exported data matches template structure
 - **Data Integrity**: Maintains field types and formatting
@@ -370,28 +400,35 @@ The main menu provides access to all major functions:
 **Settings Categories:**
 
 #### 1. Paths
+
 Configure file locations:
+
 - **Database Path**: SQLite database location
 - **Template Path**: Default CSV template for asset fields
 - **Output Directory**: Location for exporting files, reports, and labels
 
 **Tips:**
+
 - Use **relative paths** for portability (e.g., `./assets/database.db`)
 - Use **absolute paths** for network locations
 - Click **"Browse"** to select folders visually
 - Click **"Open Folder"** to view directory contents
 
 #### 2. Fields
+
 Configure field behavior:
+
 - **Dropdown Fields**: Add/remove fields that use dropdown selection
 - **Required Fields**: Specify mandatory fields for new assets
 - **Excluded Fields**: Hide system-managed fields from data entry
 - **Unique Fields**: Fields that must be unique (cleared during bulk add)
 
 #### 3. Appearance
+
 - **Theme**: Switch between Light and Dark modes
 
 #### 4. Database Operations
+
 - **Repair/Optimize**: Run VACUUM and integrity check (combines optimization and validation)
 - **Backup Database**: Create manual timestamped backup
 - **View Statistics**: See table sizes and record counts
@@ -513,6 +550,7 @@ Asset No.,*Asset Type,*Manufacturer,*Model,Serial Number,Status,Location,Room,IP
 ```
 
 **Field Naming Conventions:**
+
 - Prefix with `*` for **required fields** (e.g., `*Asset Type`)
 - Use **clear, descriptive names** (e.g., "IP Address" not "IP")
 - **Avoid special characters** except spaces, hyphens, and parentheses
@@ -536,6 +574,7 @@ Asset No.,*Asset Type,*Manufacturer,*Model,Serial Number,Status,Location,Room,IP
 ### Sample Templates
 
 The tool includes sample templates:
+
 - `default_template.csv`: General IT asset tracking
 - `sample.csv`: Example with populated data for testing
 
@@ -549,15 +588,18 @@ The tool includes sample templates:
 **Symptoms**: Python errors on launch, missing modules
 
 **Solutions:**
+
 1. Verify Python 3.11+ is installed: `python --version`
 2. Reinstall dependencies: `pip install -r requirements.txt`
 3. Check virtual environment is activated
 4. Try rebuilding virtual environment: `.\rebuild_venv.ps1` (Windows)
 
 #### Database Errors
+
 **Symptoms**: "Database locked", "Corrupted database", slow performance
 
 **Solutions:**
+
 1. Close all application windows
 2. Run Settings → Database Operations → Verify Integrity
 3. If corrupted, manually restore from backup:
@@ -570,9 +612,11 @@ The tool includes sample templates:
 4. Check disk space (database needs 2x current size for vacuum)
 
 #### Template Not Loading
+
 **Symptoms**: "Template file not found", empty form fields
 
 **Solutions:**
+
 1. Verify template path in Settings → Paths → Template Path
 2. Check template file exists and is readable
 3. Ensure template has valid CSV format (open in Excel/text editor)
@@ -580,9 +624,11 @@ The tool includes sample templates:
 5. Verify no special characters or encoding issues
 
 #### Export Failures
+
 **Symptoms**: "Export failed", incomplete CSV files
 
 **Solutions:**
+
 1. Check export directory permissions (Settings → Paths)
 2. Ensure sufficient disk space
 3. Close Excel/other programs that may lock files
@@ -590,9 +636,11 @@ The tool includes sample templates:
 5. Check for very long field values (>32,000 characters)
 
 #### Barcode Generation Issues
+
 **Symptoms**: Barcodes don't scan, misaligned labels
 
 **Solutions:**
+
 1. Verify using Avery 5160 label sheets
 2. Check printer settings: "Actual Size", no scaling
 3. Print test page to align printer
@@ -638,6 +686,7 @@ Contributions are welcome! Please follow these guidelines:
 ### Testing
 
 Before submitting PR:
+
 1. Test all CRUD operations (Create, Read, Update, Delete)
 2. Verify backward compatibility with existing databases
 3. Test with various template configurations
@@ -650,7 +699,7 @@ Before submitting PR:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-```
+```text
 MIT License
 
 Copyright (c) 2025 Brett Barker
@@ -695,12 +744,12 @@ in the Software without restriction...
 ## 📊 Version History
 
 ### Version 1.0.251106 (Current)
+
 - Initial public release
 - Core asset management functionality
 - Advanced search and reporting
 - Barcode label generation
-- Bulk update capabilities
-- Automated backup system
+- Quick asset adding and auditing
 
 ---
 
