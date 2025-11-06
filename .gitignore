@@ -13,6 +13,7 @@ env/
 build/
 dist/
 *.spec
+releases/
 
 # Project specific
 security_reports/
