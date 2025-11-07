@@ -23,6 +23,7 @@ A professional desktop application for managing IT asset inventories with advanc
   - [Main Menu](#main-menu)
   - [Add New Assets](#add-new-assets)
   - [Browse Assets](#browse-assets)
+  - [Asset Details & History](#asset-details--history)
   - [Search/Change Assets](#searchchange-assets)
   - [Reports and Analysis](#reports-and-analysis)
   - [Export Assets](#export-assets)
@@ -263,6 +264,59 @@ The main menu provides access to all major functions:
 - `F5` or `Ctrl+R`: Refresh/reload data
 - `Esc`: Clear all filters
 - `Enter`: View asset details
+
+### Asset Details & History
+
+**Purpose**: View complete asset information and track all changes with audit history
+
+When you double-click an asset from the Browse Assets window or view asset details from other screens, the Asset Details window opens, providing a comprehensive interface for viewing and editing asset information while maintaining complete audit trail security.
+
+**Key Features:**
+
+#### Asset Information Tab
+
+<img src="screenshots/asset_details.png" alt="Asset Details Window" width="600">
+
+- **Complete Asset View**: See all fields and current values for the selected asset
+- **Easy Editing**: Click **"Edit Asset"** to modify any field
+- **Real-time Updates**: Changes are immediately reflected in the database
+- **Field Validation**: Ensures data integrity with built-in validation rules
+- **User-Friendly Interface**: Organized layout with clear labels and formatted data
+
+#### Audit History Tab
+
+<img src="screenshots/asset_details_history.png" alt="Audit History Tab" width="600">
+
+The Audit History tab provides complete transparency and accountability for all asset changes:
+
+- **Complete Change History**: Every modification to the asset is recorded in a separate audit history table
+- **Who Changed What**: Track which user made each change
+- **When Changes Occurred**: Timestamp for every modification
+- **Field-Level Tracking**: See exactly which fields were modified
+- **Old vs New Values**: Compare previous and current values for changed fields
+- **Security & Compliance**: Meet regulatory requirements for asset tracking and change management
+- **Non-Editable Record**: Audit history cannot be modified, ensuring data integrity
+
+**How Audit Tracking Works:**
+
+1. **Automatic Recording**: Every time an asset is created or modified, the system automatically creates an audit record
+2. **Database-Level Security**: Audit records are stored in a separate database table (`asset_audit_history`)
+3. **User Attribution**: Changes are attributed to the logged-in user (currently uses Windows username)
+4. **Comprehensive Data**: Records include:
+   - Asset identifier
+   - Username who made the change
+   - Timestamp of the change
+   - Action type (Created, Modified, Deleted)
+   - Fields that were changed
+   - Previous and new values
+
+**Benefits:**
+
+- **Accountability**: Know exactly who made changes and when
+- **Troubleshooting**: Trace back errors or incorrect data to specific changes
+- **Compliance**: Meet audit requirements for government, military, or corporate environments
+- **Recovery**: Reference historical data if needed for restoration
+- **Training**: Identify user errors and training opportunities
 
 ### Search/Change Assets
 
