@@ -192,7 +192,7 @@ The main menu provides access to all major functions:
 
 **Purpose**: Add new assets to the inventory database
 
-<img src="screenshots/add_assets.png" alt="Main Menu" width="500">
+<img src="screenshots/add_assets.png" alt="Main Menu" width="600">
 
 **How to Use:**
 
@@ -223,7 +223,7 @@ The main menu provides access to all major functions:
 
 **Purpose**: Search, view, and manage existing assets
 
-<img src="screenshots/browse_assets.png" alt="Main Menu" width="500">
+<img src="screenshots/browse_assets.png" alt="Main Menu" width="600">
 
 **How to Use:**
 
@@ -266,7 +266,7 @@ The main menu provides access to all major functions:
 
 ### Search/Change Assets
 
-<img src="screenshots/bulk_change.png" alt="Main Menu" width="500">
+<img src="screenshots/bulk_change.png" alt="Main Menu" width="600">
 
 **Purpose**: Make modifications to existing assets quickly
 
@@ -316,7 +316,7 @@ The main menu provides access to all major functions:
 - **Recent activity summary**
 - Click **"🔄 Refresh Dashboard"** to update data
 
-<img src="screenshots/reports.png" alt="Main Menu" width="500">
+<img src="screenshots/reports.png" alt="Main Menu" width="600">
 
 #### 2. Audit Report
 
@@ -326,7 +326,7 @@ The main menu provides access to all major functions:
 - **Export to Excel** for distribution to auditors
 - **Double-click** any asset to view full details
 
-<img src="screenshots/audit_report.png" alt="Main Menu" width="500">
+<img src="screenshots/audit_report.png" alt="Main Menu" width="600">
 
 #### 3. Labels Report
 
@@ -335,7 +335,7 @@ The main menu provides access to all major functions:
 - Useful for batch label printing
 - Export results or generate barcodes directly
 
-<img src="screenshots/labels.png" alt="Main Menu" width="500">
+<img src="screenshots/labels.png" alt="Main Menu" width="600">
 
 #### 4. Duplicate Detection
 
@@ -343,7 +343,7 @@ The main menu provides access to all major functions:
 - Search by: Serial Number, Asset Number, IP Address, MAC Address
 - Review and merge/delete duplicates
 
-<img src="screenshots/duplicate_detection.png" alt="Main Menu" width="500">
+<img src="screenshots/duplicate_detection.png" alt="Main Menu" width="600">
 
 #### 5. Cubicle Analysis
 
@@ -352,7 +352,7 @@ The main menu provides access to all major functions:
 - Identify over/under-utilized spaces
 - Find misplaced devices by searching for cubicles that don't match expected assets
 
-<img src="screenshots/cubicle_analysis.png" alt="Main Menu" width="500">
+<img src="screenshots/cubicle_analysis.png" alt="Main Menu" width="600">
 
 #### 6. Hardware Maintenance Records (HMR) 🚧 *Coming Soon*
 
@@ -379,7 +379,7 @@ The main menu provides access to all major functions:
 
 **Purpose**: Export asset data to external formats
 
-<img src="screenshots/export_assets.png" alt="Main Menu" width="500">
+<img src="screenshots/export_assets.png" alt="Main Menu" width="600">
 
 **Export Options:**
 
@@ -423,9 +423,9 @@ The main menu provides access to all major functions:
 
 **Settings Categories:**
 
-<img src="screenshots/settings_part1.png" alt="Main Menu" width="500">
+<img src="screenshots/settings_part1.png" alt="Main Menu" width="600">
 
-<img src="screenshots/settings_part2.png" alt="Main Menu" width="500">
+<img src="screenshots/settings_part2.png" alt="Main Menu" width="600">
 
 #### 1. Paths
 
