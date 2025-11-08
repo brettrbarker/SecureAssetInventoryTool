@@ -7,8 +7,8 @@ A professional desktop application for managing IT asset inventories with advanc
 
 ## 📺 Demo Video
 
-<!--YouTube placeholder - replace with your video linkhttps://youtu.be/xfbNbBtzy54-->
-[![Watch the Demo](https://img.youtube.com/vi/xfbNbBtzy54/maxresdefault.jpg)](https://www.youtube.com/watch?v=xfbNbBtzy54)
+<!--YouTube placeholder - replace with your video linkhttps://youtu.be/ztt-PscVgYE-->
+[![Watch the Demo](https://img.youtube.com/vi/ztt-PscVgYE/maxresdefault.jpg)](https://www.youtube.com/watch?v=ztt-PscVgYE)
 
 *Click above to watch a full demonstration of the Secure Asset Inventory Tool*
 
