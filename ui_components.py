@@ -91,8 +91,6 @@ class SearchableDropdown(ctk.CTkFrame):
             search_entry.insert(0, self.variable.get())
             self.auto_popup = False
         
-        search_entry.focus_set()
-        
         # Add trace callback with error handling
         def safe_rebuild(*args):
             try:
@@ -124,6 +122,11 @@ class SearchableDropdown(ctk.CTkFrame):
         clear_btn.pack(side="right", padx=(4,0), pady=4)
 
         self._rebuild_list()
+        
+        # Set focus to search entry after popup is fully displayed
+        # Using after_idle ensures the window is rendered before focusing
+        self.popup.after(50, lambda: search_entry.focus_set())
+        self.popup.after(100, lambda: search_entry.icursor('end'))
 
     def _popup_geometry(self) -> str:
         # Position just under widget
