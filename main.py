@@ -6,7 +6,7 @@ from error_handling import error_handler, safe_execute
 from performance_monitoring import performance_monitor
 
 # Version Information
-VERSION = "1.0.251106"  # Format: Major.Minor.YYMMDD
+VERSION = "1.0.251114"  # Format: Major.Minor.YYMMDD
 
 # Import settings and other modules with error handling for invalid config paths
 try:
