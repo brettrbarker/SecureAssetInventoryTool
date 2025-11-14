@@ -167,7 +167,7 @@ class ReportsAnalysisWindow:
         audit_run_btn.pack(side="left", padx=20)
         
         # Export button (initially disabled)
-        self.audit_export_btn = ctk.CTkButton(days_frame, text="Export to Excel", 
+        self.audit_export_btn = ctk.CTkButton(days_frame, text="Export to CSV", 
                                             command=self._export_audit_report,
                                             width=150, height=35,
                                             state="disabled",
@@ -233,7 +233,7 @@ class ReportsAnalysisWindow:
         self.labels_run_btn.pack(side="left", padx=20)
         
         # Export button (initially disabled)
-        self.labels_export_btn = ctk.CTkButton(criteria_frame, text="Export to Excel", 
+        self.labels_export_btn = ctk.CTkButton(criteria_frame, text="Export to CSV", 
                                               command=self._export_labels_report,
                                               width=150, height=35,
                                               state="disabled",
@@ -365,7 +365,7 @@ class ReportsAnalysisWindow:
         duplicate_run_btn.pack(side="left", padx=20)
         
         # Export button (initially disabled)
-        self.duplicate_export_btn = ctk.CTkButton(field_frame, text="Export to Excel", 
+        self.duplicate_export_btn = ctk.CTkButton(field_frame, text="Export to CSV", 
                                                 command=self._export_duplicate_report,
                                                 width=150, height=35,
                                                 state="disabled",
@@ -483,7 +483,7 @@ class ReportsAnalysisWindow:
         cubicle_run_btn.pack(side="left", padx=20)
         
         # Export button (initially disabled)
-        self.cubicle_export_btn = ctk.CTkButton(quantity_frame, text="Export to Excel", 
+        self.cubicle_export_btn = ctk.CTkButton(quantity_frame, text="Export to CSV", 
                                               command=self._export_cubicle_analysis,
                                               width=150, height=35,
                                               state="disabled",
@@ -1515,7 +1515,7 @@ class ReportsAnalysisWindow:
             tree.heading(column, text=column)
     
     def _export_audit_report(self):
-        """Export audit report to Excel."""
+        """Export audit report to CSV."""
         if self.audit_data is None:
             messagebox.showwarning("No Data", "No audit report data to export. Please generate a report first.")
             return
@@ -1526,35 +1526,16 @@ class ReportsAnalysisWindow:
             os.makedirs(reports_dir, exist_ok=True)
             
             filename = filedialog.asksaveasfilename(
-                defaultextension=".xlsx",
-                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
                 title="Save Audit Report",
-                initialfile=f"Audit_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                initialfile=f"Audit_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 initialdir=reports_dir
             )
             
             if filename:
-                # Export to Excel with formatting
-                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                    self.audit_data.to_excel(writer, sheet_name='Audit Report', index=False)
-                    
-                    # Get workbook and worksheet for formatting
-                    workbook = writer.book
-                    worksheet = writer.sheets['Audit Report']
-                    
-                    # Auto-adjust column widths
-                    for column in worksheet.columns:
-                        max_length = 0
-                        column_letter = column[0].column_letter
-                        for cell in column:
-                            try:
-                                if len(str(cell.value)) > max_length:
-                                    max_length = len(str(cell.value))
-                            except:
-                                pass
-                        adjusted_width = min(max_length + 2, 50)
-                        worksheet.column_dimensions[column_letter].width = adjusted_width
-                
+                # Export to CSV
+                self.audit_data.to_csv(filename, index=False)
                 messagebox.showinfo("Export Complete", f"Audit report exported successfully to:\n{filename}")
                 
         except Exception as e:
@@ -1562,7 +1543,7 @@ class ReportsAnalysisWindow:
                                      parent_window=self.window)
     
     def _export_labels_report(self):
-        """Export labels report to Excel."""
+        """Export labels report to CSV."""
         if self.labels_data is None:
             messagebox.showwarning("No Data", "No labels report data to export. Please generate a report first.")
             return
@@ -1573,35 +1554,16 @@ class ReportsAnalysisWindow:
             os.makedirs(labels_dir, exist_ok=True)
             
             filename = filedialog.asksaveasfilename(
-                defaultextension=".xlsx",
-                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
                 title="Save Labels Report",
-                initialfile=f"Labels_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                initialfile=f"Labels_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 initialdir=labels_dir
             )
             
             if filename:
-                # Export to Excel with formatting
-                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                    self.labels_data.to_excel(writer, sheet_name='Labels Report', index=False)
-                    
-                    # Get workbook and worksheet for formatting
-                    workbook = writer.book
-                    worksheet = writer.sheets['Labels Report']
-                    
-                    # Auto-adjust column widths
-                    for column in worksheet.columns:
-                        max_length = 0
-                        column_letter = column[0].column_letter
-                        for cell in column:
-                            try:
-                                if len(str(cell.value)) > max_length:
-                                    max_length = len(str(cell.value))
-                            except:
-                                pass
-                        adjusted_width = min(max_length + 2, 50)
-                        worksheet.column_dimensions[column_letter].width = adjusted_width
-                
+                # Export to CSV
+                self.labels_data.to_csv(filename, index=False)
                 messagebox.showinfo("Export Complete", f"Labels report exported successfully to:\n{filename}")
                 
         except Exception as e:
@@ -1609,7 +1571,7 @@ class ReportsAnalysisWindow:
                                      parent_window=self.window)
 
     def _export_duplicate_report(self):
-        """Export duplicate report to Excel."""
+        """Export duplicate report to CSV."""
         if self.duplicate_data is None:
             messagebox.showwarning("No Data", "No duplicate report data to export. Please generate a report first.")
             return
@@ -1620,33 +1582,16 @@ class ReportsAnalysisWindow:
             os.makedirs(reports_dir, exist_ok=True)
             
             filename = filedialog.asksaveasfilename(
-                defaultextension=".xlsx",
-                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
                 title="Save Duplicate Report",
-                initialfile=f"Duplicate_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                initialfile=f"Duplicate_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 initialdir=reports_dir
             )
             
             if filename:
-                # Export to Excel
-                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                    self.duplicate_data.to_excel(writer, sheet_name='Duplicate Report', index=False)
-                    
-                    # Auto-adjust column widths
-                    workbook = writer.book
-                    worksheet = writer.sheets['Duplicate Report']
-                    for column in worksheet.columns:
-                        max_length = 0
-                        column_letter = column[0].column_letter
-                        for cell in column:
-                            try:
-                                if len(str(cell.value)) > max_length:
-                                    max_length = len(str(cell.value))
-                            except:
-                                pass
-                        adjusted_width = min(max_length + 2, 50)
-                        worksheet.column_dimensions[column_letter].width = adjusted_width
-                
+                # Export to CSV
+                self.duplicate_data.to_csv(filename, index=False)
                 messagebox.showinfo("Export Complete", f"Duplicate report exported successfully to:\n{filename}")
                 
         except Exception as e:
@@ -1654,7 +1599,7 @@ class ReportsAnalysisWindow:
                                      parent_window=self.window)
     
     def _export_cubicle_analysis(self):
-        """Export cubicle analysis to Excel."""
+        """Export cubicle analysis to CSV."""
         if self.cubicle_data is None:
             messagebox.showwarning("No Data", "No cubicle analysis data to export. Please generate an analysis first.")
             return
@@ -1665,33 +1610,17 @@ class ReportsAnalysisWindow:
             os.makedirs(reports_dir, exist_ok=True)
             
             filename = filedialog.asksaveasfilename(
-                defaultextension=".xlsx",
-                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
                 title="Save Cubicle Analysis",
-                initialfile=f"Cubicle_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                initialfile=f"Cubicle_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 initialdir=reports_dir
             )
             
             if filename:
-                # Export to Excel
+                # Export to CSV
                 df = pd.DataFrame(self.cubicle_data)
-                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                    df.to_excel(writer, sheet_name='Cubicle Analysis', index=False)
-                    
-                    # Auto-adjust column widths
-                    worksheet = writer.sheets['Cubicle Analysis']
-                    for column in worksheet.columns:
-                        max_length = 0
-                        column_letter = column[0].column_letter
-                        for cell in column:
-                            try:
-                                if len(str(cell.value)) > max_length:
-                                    max_length = len(str(cell.value))
-                            except:
-                                pass
-                        adjusted_width = min(max_length + 2, 50)
-                        worksheet.column_dimensions[column_letter].width = adjusted_width
-                
+                df.to_csv(filename, index=False)
                 messagebox.showinfo("Export Complete", f"Cubicle analysis exported successfully to:\n{filename}")
                 
         except Exception as e:
