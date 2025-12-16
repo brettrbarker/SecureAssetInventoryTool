@@ -15,6 +15,7 @@ import matplotlib.patches as patches
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import seaborn as sns
+from date_utils import parse_flexible_date
 
 # Configure matplotlib for tkinter integration
 plt.switch_backend('Agg')  # Use non-interactive backend
@@ -581,70 +582,73 @@ class ReportsAnalysisWindow:
             # Get parameters
             days = int(self.audit_days_var.get())
             
-            # Calculate cutoff date in ISO format for proper date comparison
+            # Calculate cutoff date
             cutoff_date = datetime.now() - timedelta(days=days)
-            cutoff_str = cutoff_date.strftime("%Y-%m-%d")
             
             # Clear previous results
             for widget in self.audit_results_frame.winfo_children():
                 widget.destroy()
             
-            # Query database for assets not audited since cutoff date
-            # Need to handle multiple date formats properly by converting to ISO format for comparison
+            # Pull candidate rows (no date filtering in SQL; handle formats in Python)
             query = """
-                SELECT asset_no, manufacturer, model, serial_number, location, room, cubicle, 
+                SELECT asset_no, manufacturer, model, serial_number, location, room, cubicle,
                        audit_date, status, asset_type
-                FROM assets 
-                WHERE is_deleted = 0 
-                AND (
-                    audit_date IS NULL 
-                    OR audit_date = ''
-                    OR (
-                        CASE 
-                            WHEN audit_date LIKE '%/%/____' THEN 
-                                date(
-                                    substr(audit_date, length(audit_date) - 3, 4) || '-' || 
-                                    substr('0' || substr(audit_date, 1, instr(audit_date, '/') - 1), -2) || '-' || 
-                                    substr('0' || substr(
-                                        substr(audit_date, instr(audit_date, '/') + 1), 
-                                        1, 
-                                        instr(substr(audit_date, instr(audit_date, '/') + 1), '/') - 1
-                                    ), -2)
-                                )
-                            WHEN audit_date LIKE '____-__-__' THEN 
-                                date(audit_date)
-                            ELSE 
-                                '1900-01-01'
-                        END
-                    ) < date(?)
-                )
-                ORDER BY location, room, cubicle, manufacturer, model
+                FROM assets
+                WHERE is_deleted = 0
             """
-            
             with self.db.get_connection() as conn:
-                cursor = conn.execute(query, (cutoff_str,))
+                cursor = conn.execute(query)
                 results = cursor.fetchall()
             
-            # Convert to pandas DataFrame for better processing
-            columns = ["Asset No", "Manufacturer", "Model", "Serial Number", 
-                      "Location", "Room", "Cubicle", "Last Audit", "Status", "Asset Type"]
-            
+            base_columns = [
+                "Asset No", "Manufacturer", "Model", "Serial Number",
+                "Location", "Room", "Cubicle", "Last Audit", "Status", "Asset Type"
+            ]
+            display_columns = base_columns + ["Days Since Audit"]
+
             if results:
-                self.audit_data = pd.DataFrame(results, columns=columns)
-                
-                # Add calculated fields
-                self.audit_data['Days Since Audit'] = self.audit_data['Last Audit'].apply(
-                    lambda x: self._calculate_days_since_audit(x, cutoff_date)
-                )
-                
-                # Enable export button
-                self.audit_export_btn.configure(state="normal", fg_color=["#3B8ED0", "#1F6AA5"])
+                df = pd.DataFrame(results, columns=base_columns)
+
+                def _parsed_date(val):
+                    parsed = parse_flexible_date(val)
+                    return parsed
+
+                df["_parsed_audit"] = df["Last Audit"].apply(_parsed_date)
+
+                def _days_since(val):
+                    if val is None:
+                        return None
+                    return (datetime.now() - val).days
+
+                df["_days_since"] = df["_parsed_audit"].apply(_days_since)
+
+                # Keep rows with no audit or with days_since greater than threshold
+                mask = df["_parsed_audit"].isna() | (df["_days_since"] > days)
+                df = df[mask].copy()
+
+                # User-facing column with friendly text
+                def _display_days(val):
+                    if val is None:
+                        return "Never"
+                    return str(val)
+
+                df["Days Since Audit"] = df["_days_since"].apply(_display_days)
+
+                # Drop helper columns
+                df.drop(columns=["_parsed_audit", "_days_since"], inplace=True)
+
+                self.audit_data = df
+
+                if not df.empty:
+                    self.audit_export_btn.configure(state="normal", fg_color=["#3B8ED0", "#1F6AA5"])
+                else:
+                    self.audit_export_btn.configure(state="disabled", fg_color="gray")
             else:
                 self.audit_data = None
                 self.audit_export_btn.configure(state="disabled", fg_color="gray")
             
             # Display results
-            if not results:
+            if self.audit_data is None or self.audit_data.empty:
                 no_results_label = ctk.CTkLabel(self.audit_results_frame, 
                                               text=f"✅ All assets have been audited within the last {days} days!",
                                               font=ctk.CTkFont(size=16, weight="bold"),
@@ -653,7 +657,7 @@ class ReportsAnalysisWindow:
                 return
             
             # Results header with statistics
-            stats_text = f"Assets not audited in the last {days} days: {len(results)} found\n"
+            stats_text = f"Assets not audited in the last {days} days: {len(self.audit_data)} found\n"
             if self.audit_data is not None:
                 # Add some statistics
                 by_location = self.audit_data.groupby('Location').size()
@@ -666,7 +670,11 @@ class ReportsAnalysisWindow:
             header_label.pack(pady=(10, 20))
             
             # Create results table
-            self._create_results_table(self.audit_results_frame, results, columns)
+            self._create_results_table(
+                self.audit_results_frame,
+                self.audit_data[display_columns].values.tolist(),
+                display_columns,
+            )
             
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number of days.")
@@ -678,12 +686,12 @@ class ReportsAnalysisWindow:
         """Calculate days since last audit."""
         if not audit_date_str or audit_date_str.strip() == '':
             return "Never"
-        try:
-            audit_date = datetime.strptime(audit_date_str, "%m/%d/%Y")
-            days_diff = (datetime.now() - audit_date).days
-            return str(days_diff)
-        except:
+        audit_date = parse_flexible_date(audit_date_str)
+        if not audit_date:
             return "Invalid Date"
+
+        days_diff = (datetime.now() - audit_date).days
+        return str(days_diff)
     
     @performance_monitor("Generate Labels Report")
     def _generate_labels_report(self):
@@ -742,9 +750,8 @@ class ReportsAnalysisWindow:
             else:
                 # Get date parameter and parse it
                 date_str = self.labels_date_var.get()
-                try:
-                    selected_date = datetime.strptime(date_str, "%m/%d/%Y")
-                except ValueError:
+                selected_date = parse_flexible_date(date_str)
+                if not selected_date:
                     messagebox.showerror("Error", "Please enter a valid date in MM/DD/YYYY format.")
                     return
                 
@@ -857,17 +864,11 @@ class ReportsAnalysisWindow:
         """Format label requested date for display in results."""
         if not date_str or date_str.strip() == '' or date_str == '1901-01-01 00:00:00':
             return "No Date"
-        try:
-            # Try to parse as ISO datetime format first
-            date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            return date_obj.strftime("%m/%d/%Y %I:%M %p")
-        except:
-            try:
-                # Try to parse as other common formats
-                date_obj = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                return date_obj.strftime("%m/%d/%Y %I:%M %p")
-            except:
-                return str(date_str)  # Return as-is if can't parse
+        parsed = parse_flexible_date(date_str)
+        if parsed:
+            return parsed.strftime("%m/%d/%Y %I:%M %p")
+
+        return str(date_str)  # Return as-is if can't parse
 
     @performance_monitor("Generate Barcode Labels")
     def _generate_barcode_labels(self):
@@ -1465,30 +1466,9 @@ class ReportsAnalysisWindow:
                         pass
                 
                 # Check if it's a date (various formats)
-                date_patterns = [
-                    r'^\d{1,2}/\d{1,2}/\d{4}$',  # MM/DD/YYYY or M/D/YYYY
-                    r'^\d{4}-\d{2}-\d{2}$',      # YYYY-MM-DD
-                    r'^\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)$'  # MM/DD/YYYY HH:MM AM/PM
-                ]
-                
-                for pattern in date_patterns:
-                    if re.match(pattern, value_str):
-                        try:
-                            if '/' in value_str and ':' in value_str:
-                                # Handle MM/DD/YYYY HH:MM AM/PM format
-                                date_part = value_str.split()[0]
-                                date_obj = datetime.strptime(date_part, "%m/%d/%Y")
-                            elif '/' in value_str:
-                                # Handle MM/DD/YYYY format
-                                date_obj = datetime.strptime(value_str, "%m/%d/%Y")
-                            elif '-' in value_str:
-                                # Handle YYYY-MM-DD format
-                                date_obj = datetime.strptime(value_str, "%Y-%m-%d")
-                            else:
-                                continue
-                            return (1, date_obj.timestamp())  # Dates sort with priority 1
-                        except ValueError:
-                            continue
+                parsed_date = parse_flexible_date(value_str)
+                if parsed_date:
+                    return (1, parsed_date.timestamp())  # Dates sort with priority 1
                 
                 # Default to string sorting
                 return (2, value_str.lower())  # Text sorts with priority 2

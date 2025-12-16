@@ -10,6 +10,7 @@ from error_handling import error_handler, safe_execute
 from validation import form_validator, asset_validator
 from performance_monitoring import performance_monitor
 from ui_components import SearchableDropdown, DatePicker
+from date_utils import normalize_date_string
 
 
 # Fields that should not be editable (system fields and auto-generated fields)
@@ -295,6 +296,9 @@ class EditAssetWindow:
             # Convert None to empty string
             if value is None:
                 value = ""
+
+            if "date" in header.lower() and value:
+                value = normalize_date_string(value)
             
             # Set widget value based on widget type
             try:
@@ -334,6 +338,9 @@ class EditAssetWindow:
                 else:
                     value = ""
                 
+                if "date" in header.lower() and value:
+                    value = normalize_date_string(value)
+
                 # Store with both header name and database column name
                 form_data[header] = value.strip() if value else ""
                 

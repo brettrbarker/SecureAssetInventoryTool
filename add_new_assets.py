@@ -12,6 +12,7 @@ from validation import form_validator, asset_validator
 from performance_monitoring import performance_monitor
 from ui_components import SearchableDropdown, DatePicker
 from field_utils import compute_db_fields_from_template, compute_dropdown_fields, compute_date_fields
+from date_utils import normalize_date_string
 
 
 # AI Initial Prompt:
@@ -500,6 +501,9 @@ class AddNewAssetsWindow:
                 val = widget.get("0.0", "end-1c").strip()
             else:
                 val = widget.get().strip()
+
+            if "date" in header.lower() and val:
+                val = normalize_date_string(val)
             if header.lower() == "serial number":
                 serial_number = val
             row_values.append(val)
