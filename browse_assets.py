@@ -15,6 +15,7 @@ from error_handling import error_handler, safe_execute
 from performance_monitoring import performance_monitor
 from database_service import database_service
 from ui_components import AssetDetailWindow, SearchableDropdown, DatePicker
+from date_utils import parse_flexible_date
 import re
 
 
@@ -1162,29 +1163,8 @@ class BrowseAssetsWindow:
         """Parse a date string in various formats."""
         if not date_str:
             return None
-        
-        # Try different date formats
-        formats = [
-            "%m/%d/%Y",      # MM/DD/YYYY (DatePicker format)
-            "%m/%#d/%Y",     # MM/D/YYYY (Windows format without leading zero)
-            "%Y-%m-%d",      # ISO format
-            "%Y-%m-%dT%H:%M:%S",  # ISO with time
-            "%Y-%m-%d %H:%M:%S",  # ISO with space
-        ]
-        
-        for fmt in formats:
-            try:
-                return datetime.strptime(str(date_str).strip(), fmt)
-            except ValueError:
-                continue
-        
-        # Try parsing ISO format with timezone
-        try:
-            return datetime.fromisoformat(str(date_str).replace('Z', '+00:00'))
-        except (ValueError, AttributeError):
-            pass
-        
-        return None
+
+        return parse_flexible_date(str(date_str).strip())
     
     def _build_search_filters(self):
         """Build comprehensive filter dictionary from the nested group structure."""

@@ -10,6 +10,7 @@ import csv
 import os
 from datetime import datetime, timedelta
 from typing import List, Callable, Optional, Dict, Any
+from date_utils import normalize_date_string, parse_flexible_date
 from config_manager import ConfigManager
 from asset_database import AssetDatabase
 
@@ -238,11 +239,15 @@ class DatePicker(ctk.CTkFrame):
         # Main display: entry (editable) + calendar button
         self.display_entry = ctk.CTkEntry(self, textvariable=self.variable, width=width-30)
         self.display_entry.grid(row=0, column=0, sticky="we")
+        self.display_entry.bind("<FocusOut>", self._normalize_entry_value)
         
         # Calendar button
         calendar_btn = ctk.CTkButton(self, text="📅", width=28, command=self.open_calendar)
         calendar_btn.grid(row=0, column=1, padx=(4,0))
         self.columnconfigure(0, weight=1)
+
+        # Normalize any pre-set value so two-digit years become four-digit years
+        self._normalize_entry_value()
     
     def open_calendar(self):
         if self.popup and self.popup.winfo_exists():
@@ -308,18 +313,14 @@ class DatePicker(ctk.CTkFrame):
     
     def _parse_current_date(self):
         """Parse the current date value in the entry field."""
-        try:
-            date_str = self.variable.get().strip()
-            if not date_str:
-                return None
-            # Parse MM/D/YYYY or MM/DD/YYYY format
-            parts = date_str.split('/')
-            if len(parts) == 3:
-                month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
-                return datetime(year, month, day)
-        except (ValueError, IndexError):
-            pass
-        return None
+        parsed = parse_flexible_date(self.variable.get())
+        return parsed
+
+    def _normalize_entry_value(self, _event=None):
+        """Normalize entry text to a four-digit year when possible."""
+        normalized = normalize_date_string(self.variable.get())
+        if normalized != self.variable.get():
+            self.variable.set(normalized)
     
     def _prev_month(self):
         """Navigate to previous month."""
@@ -404,14 +405,14 @@ class DatePicker(ctk.CTkFrame):
     def _select_date(self, day):
         """Select a specific date."""
         selected_date = datetime(self.current_year, self.current_month, day)
-        formatted_date = f"{selected_date:%m}/{selected_date.day}/{selected_date:%Y}"
+        formatted_date = selected_date.strftime("%m/%d/%Y")
         self.variable.set(formatted_date)
         self.close_calendar()
     
     def _select_today(self):
         """Select today's date."""
         today = datetime.now()
-        formatted_date = f"{today:%m}/{today.day}/{today:%Y}"
+        formatted_date = today.strftime("%m/%d/%Y")
         self.variable.set(formatted_date)
         self.close_calendar()
     

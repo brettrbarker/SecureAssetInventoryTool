@@ -7,6 +7,7 @@ import re
 from typing import Dict, List, Any, Tuple
 from datetime import datetime
 import os
+from date_utils import normalize_date_string
 
 class ValidationResult:
     """Result of a validation operation."""
@@ -134,7 +135,8 @@ class AssetValidator:
             
             # Only accept MM/D/YYYY format (handles both MM/DD/YYYY and M/D/YYYY)
             try:
-                datetime.strptime(date_str, '%m/%d/%Y')
+                normalized = normalize_date_string(date_str)
+                datetime.strptime(normalized, '%m/%d/%Y')
                 return True
             except ValueError:
                 return False
@@ -204,7 +206,8 @@ class FormValidator:
         elif 'Date' in field_name:
             try:
                 if isinstance(value, str) and value.strip():
-                    datetime.strptime(value, '%m/%d/%Y')
+                    normalized = normalize_date_string(value)
+                    datetime.strptime(normalized, '%m/%d/%Y')
             except ValueError:
                 return False, "Invalid date format (MM/DD/YYYY)"
         
