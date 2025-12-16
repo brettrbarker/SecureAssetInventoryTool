@@ -42,7 +42,7 @@ def normalize_date_string(date_str: str) -> str:
     except ValueError:
         return date_str.strip()
 
-    return f"{parsed:%m}/{parsed.day}/{parsed:%Y}"
+    return parsed.strftime("%m/%d/%Y")
 
 
 def parse_flexible_date(date_str: str) -> Optional[datetime]:

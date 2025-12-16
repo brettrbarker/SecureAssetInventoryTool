@@ -28,9 +28,9 @@ READONLY_FIELDS = {
 AUDIT_DATE_HEADER = "audit date"
 
 def _today_audit_date_str() -> str:
-    """Return today's date in requested format: MM/D/YYYY (month zero-padded, day without leading zero)."""
+    """Return today's date in requested format: MM/DD/YYYY."""
     now = datetime.now()
-    return f"{now:%m}/{now.day}/{now:%Y}"
+    return now.strftime("%m/%d/%Y")
 
 
 class EditAssetWindow:

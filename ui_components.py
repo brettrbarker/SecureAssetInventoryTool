@@ -405,14 +405,14 @@ class DatePicker(ctk.CTkFrame):
     def _select_date(self, day):
         """Select a specific date."""
         selected_date = datetime(self.current_year, self.current_month, day)
-        formatted_date = f"{selected_date:%m}/{selected_date.day}/{selected_date:%Y}"
+        formatted_date = selected_date.strftime("%m/%d/%Y")
         self.variable.set(formatted_date)
         self.close_calendar()
     
     def _select_today(self):
         """Select today's date."""
         today = datetime.now()
-        formatted_date = f"{today:%m}/{today.day}/{today:%Y}"
+        formatted_date = today.strftime("%m/%d/%Y")
         self.variable.set(formatted_date)
         self.close_calendar()
     
