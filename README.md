@@ -825,7 +825,13 @@ in the Software without restriction...
 
 ## 📊 Version History
 
-### Version 1.0.251106 (Current)
+### Version 1.0.251216 (Current)
+
+- Dates now normalize to four-digit years across add/edit/bulk flows and date pickers (handles inputs like 7/1/25 → 07/01/2025)
+- Audit Report uses flexible date parsing to correctly exclude recently audited assets regardless of 2-digit/4-digit year inputs
+- DatePicker output is fully zero-padded (MM/DD/YYYY) for consistency
+
+### Version 1.0.251106
 
 - Initial public release
 - Core asset management functionality
