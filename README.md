@@ -130,6 +130,21 @@ A professional desktop application for managing IT asset inventories with advanc
    python main.py
    ```
 
+### Option 2.5: Run the fast local web UI (desktop alternative)
+
+If the Python desktop UI feels sluggish, you can use the new local web interface powered by FastAPI. It uses the same database and config file.
+
+```bash
+python web_app.py
+```
+
+Then open http://127.0.0.1:8000 in your browser.
+
+Notes:
+- Bind is localhost-only by default; keep it that way unless you explicitly need remote access.
+- The web UI reads the configured template path (`assets/config.json`). Set a valid template in the desktop Settings first, or edit the config file directly.
+- Dependencies are in requirements.txt (`fastapi`, `uvicorn`, `python-multipart`).
+
 ### Option 3: Building Your Own Standalone Executable (Windows)
 
 For Windows users who want to build from source, use the included PowerShell build script:

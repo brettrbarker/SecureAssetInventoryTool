@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Secure Asset Inventory Tool — Web UI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand">
+                <span class="brand-mark">SAIT</span>
+                <div class="brand-text">
+                    <span class="brand-title">Secure Asset Inventory</span>
+                    <span class="brand-sub">Fast local web console</span>
+                </div>
+            </div>
+            <div class="top-actions">
+                <button class="ghost" id="settingsButton" title="Open settings">⚙ Settings</button>
+                <button class="ghost" id="refreshButton" title="Reload data">⟳ Refresh</button>
+                <button class="primary" id="newAssetButton">＋ New asset</button>
+            </div>
+        </header>
+
+        <section class="hero-panel">
+            <div class="hero-copy">
+                <h1>Track assets without UI lag.</h1>
+                <p>Search, filter, and add records through a local FastAPI backend served on localhost.</p>
+                <div class="pill">Local only · Offline capable</div>
+            </div>
+            <div class="hero-kpi" id="kpiCount">0 assets</div>
+        </section>
+
+        <section class="controls">
+            <div class="control">
+                <label for="searchInput">Search</label>
+                <div class="input-with-icon">
+                    <span>🔍</span>
+                    <input id="searchInput" type="search" placeholder="System name, serial, asset number" />
+                </div>
+            </div>
+            <div class="control">
+                <label for="fieldSelect">Field</label>
+                <select id="fieldSelect"></select>
+            </div>
+            <div class="control">
+                <label for="limitSelect">Limit</label>
+                <select id="limitSelect">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="250">250</option>
+                    <option value="500">500</option>
+                </select>
+            </div>
+            <div class="control spacer"></div>
+            <div class="control">
+                <label>&nbsp;</label>
+                <button class="ghost" id="clearFilters">Clear</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Assets</h2>
+                    <p class="muted" id="resultSummary">Loading…</p>
+                </div>
+                <div class="chip" id="templatePath">Template: not set</div>
+            </div>
+            <div class="table-wrap">
+                <table id="assetTable">
+                    <thead>
+                        <tr>
+                            <th>Asset No.</th>
+                            <th>System Name</th>
+                            <th>Manufacturer</th>
+                            <th>Model</th>
+                            <th>Serial</th>
+                            <th>Location</th>
+                            <th>Modified</th>
+                        </tr>
+                    </thead>
+                    <tbody id="assetTableBody">
+                        <tr><td colspan="7" class="muted">Fetching assets…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel" id="settingsPanel" hidden>
+            <div class="panel-header">
+                <div>
+                    <h2>Settings</h2>
+                    <p class="muted">Configure paths, theme, and field groups from the desktop app.</p>
+                </div>
+                <div class="chip" id="settingsStatus">Not loaded</div>
+            </div>
+
+            <div class="settings-grid">
+                <div class="card">
+                    <h3>Paths</h3>
+                    <label>Template path
+                        <input id="settingTemplatePath" type="text" placeholder="assets/templates/default_template.csv" />
+                    </label>
+                    <label>Output directory
+                        <input id="settingOutputDir" type="text" placeholder="assets/output_files" />
+                    </label>
+                    <label>Database path
+                        <input id="settingDatabasePath" type="text" placeholder="assets/asset_database.db" />
+                    </label>
+                    <label>Theme
+                        <select id="settingTheme">
+                            <option value="dark">Dark</option>
+                            <option value="light">Light</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="card">
+                    <h3>Bulk update presets (JSON)</h3>
+                    <textarea id="settingPresets" rows="8" placeholder='{"Update Audit Date": {...}}'></textarea>
+                    <h3>Saved searches (JSON)</h3>
+                    <textarea id="settingSavedSearches" rows="6" placeholder='{}'></textarea>
+                </div>
+            </div>
+
+            <div class="settings-columns" id="settingsFields"></div>
+
+            <div class="settings-columns" id="settingsMonitor"></div>
+
+            <div class="settings-columns" id="settingsReports"></div>
+
+            <div class="settings-actions">
+                <button class="ghost" id="closeSettings">Close</button>
+                <button class="primary" id="saveSettings">Save settings</button>
+            </div>
+        </section>
+    </div>
+
+    <div class="drawer" id="drawer" hidden>
+        <div class="drawer-body">
+            <div class="drawer-header">
+                <h3>New asset</h3>
+                <button class="ghost" id="closeDrawer">✕</button>
+            </div>
+            <form id="assetForm" class="form-grid">
+                <label>
+                    <span>System Name *</span>
+                    <input name="System Name" required placeholder="Workstation-07" />
+                </label>
+                <label>
+                    <span>*Manufacturer *</span>
+                    <input name="*Manufacturer" required placeholder="Dell" list="manufacturerOptions" />
+                </label>
+                <label>
+                    <span>*Model *</span>
+                    <input name="*Model" required placeholder="OptiPlex 7010" list="modelOptions" />
+                </label>
+                <label>
+                    <span>Serial Number</span>
+                    <input name="Serial Number" placeholder="SN12345" />
+                </label>
+                <label>
+                    <span>Status</span>
+                    <input name="Status" placeholder="In Service" list="statusOptions" />
+                </label>
+                <label>
+                    <span>Location</span>
+                    <input name="Location" placeholder="HQ" list="locationOptions" />
+                </label>
+                <label>
+                    <span>Room</span>
+                    <input name="Room" placeholder="210" list="roomOptions" />
+                </label>
+                <label>
+                    <span>Audit Date</span>
+                    <input name="Audit Date" placeholder="MM/DD/YYYY" />
+                </label>
+                <label class="wide">
+                    <span>Notes</span>
+                    <textarea name="Notes" rows="3" placeholder="Optional notes"></textarea>
+                </label>
+                <div class="form-actions">
+                    <button type="button" class="ghost" id="cancelForm">Cancel</button>
+                    <button type="submit" class="primary">Save asset</button>
+                </div>
+                <datalist id="manufacturerOptions"></datalist>
+                <datalist id="modelOptions"></datalist>
+                <datalist id="statusOptions"></datalist>
+                <datalist id="locationOptions"></datalist>
+                <datalist id="roomOptions"></datalist>
+            </form>
+            <p class="muted small">Unique fields enforced: Serial Number, IP Address, MAC Address, Phone Number, Media Control#, TSCO Control#, Tamper Seal, Network Name (from config).</p>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>
