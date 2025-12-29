@@ -22,8 +22,12 @@ const templatePathEl = document.querySelector("#templatePath");
 const assetTableBody = document.querySelector("#assetTableBody");
 const toast = document.querySelector("#toast");
 const drawer = document.querySelector("#drawer");
+const viewDrawer = document.querySelector("#viewDrawer");
 const assetForm = document.querySelector("#assetForm");
 const drawerTitle = document.querySelector("#drawer h3");
+const viewTitle = document.querySelector("#viewTitle");
+const viewDetails = document.querySelector("#viewDetails");
+const closeViewDrawer = document.querySelector("#closeViewDrawer");
 
 const settingsPanel = document.querySelector("#settingsPanel");
 const settingsButton = document.querySelector("#settingsButton");
@@ -162,8 +166,8 @@ function renderTable(items) {
                 <td>${clean(asset.location || asset.room)}</td>
                 <td>${modified}</td>
                 <td>
+                    <button class="ghost action-view" data-id="${asset.id}">View Details</button>
                     <button class="ghost action-edit" data-id="${asset.id}">Edit</button>
-                    <button class="ghost action-delete" data-id="${asset.id}">Delete</button>
                 </td>
             </tr>
         `;
@@ -318,6 +322,20 @@ async function openEditFromId(id) {
     }
 }
 
+async function openViewFromId(id) {
+    const local = findAsset(id);
+    if (local) {
+        openViewDrawerPanel(local);
+        return;
+    }
+    try {
+        const asset = await fetchJson(`/api/assets/${id}`);
+        openViewDrawerPanel(asset);
+    } catch (err) {
+        showToast(err.message || "Could not load asset", "error");
+    }
+}
+
 async function deleteAsset(id) {
     if (!confirm("Delete this asset? This cannot be undone.")) return;
     try {
@@ -414,7 +432,42 @@ function setFormFromAsset(asset) {
     });
 }
 
+function renderViewDetails(asset) {
+    if (!viewDetails) return;
+    const headers = (state.templateHeaders && state.templateHeaders.length)
+        ? state.templateHeaders
+        : (Object.keys(state.mapping || {}).length ? Object.keys(state.mapping || {}) : Object.keys(asset || {}));
+    const fragments = headers.map((header) => {
+        const col = state.mapping[header] || header;
+        const value = asset[col];
+        const display = value === undefined || value === null || value === "" ? "—" : value;
+        return `<div class="detail-item"><div class="detail-label">${header}</div><div class="detail-value">${display}</div></div>`;
+    });
+    viewDetails.innerHTML = fragments.join("");
+}
+
+function openViewDrawerPanel(asset) {
+    if (!viewDrawer || !asset) return;
+    if (!drawer.hidden) closeDrawerPanel();
+    const title = asset.system_name || asset.asset_no || asset.serial_number || `Asset ${asset.id}`;
+    viewTitle.textContent = title;
+    renderViewDetails(asset);
+    viewDrawer.hidden = false;
+    viewDrawer.classList.add("open");
+}
+
+function closeViewDrawerPanel() {
+    if (!viewDrawer) return;
+    viewDrawer.classList.remove("open");
+    setTimeout(() => {
+        viewDrawer.hidden = true;
+        viewTitle.textContent = "Asset details";
+        if (viewDetails) viewDetails.innerHTML = "";
+    }, 160);
+}
+
 function openDrawer(asset = null) {
+    if (viewDrawer && !viewDrawer.hidden) closeViewDrawerPanel();
     if (asset) {
         state.editAssetId = asset.id;
         drawerTitle.textContent = "Edit asset";
@@ -692,18 +745,19 @@ function bindEvents() {
         e.preventDefault();
         closeDrawerPanel();
     });
+    closeViewDrawer.addEventListener("click", closeViewDrawerPanel);
 
     assetForm.addEventListener("submit", handleSubmit);
 
     assetTableBody.addEventListener("click", (e) => {
+        const viewBtn = e.target.closest(".action-view");
         const editBtn = e.target.closest(".action-edit");
-        const delBtn = e.target.closest(".action-delete");
-        if (editBtn) {
+        if (viewBtn) {
+            const id = viewBtn.dataset.id;
+            openViewFromId(id);
+        } else if (editBtn) {
             const id = editBtn.dataset.id;
             openEditFromId(id);
-        } else if (delBtn) {
-            const id = delBtn.dataset.id;
-            deleteAsset(id);
         }
     });
 

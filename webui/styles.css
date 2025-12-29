@@ -304,6 +304,20 @@ textarea { resize: vertical; }
 .form-grid .wide { grid-column: 1 / -1; }
 .form-actions { display: flex; gap: 10px; justify-content: flex-end; grid-column: 1 / -1; margin-top: 8px; }
 
+.details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+.detail-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+}
+.detail-label { color: var(--muted); font-size: 12px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.6px; }
+.detail-value { font-weight: 600; }
+
 .toast {
     position: fixed;
     bottom: 16px;
