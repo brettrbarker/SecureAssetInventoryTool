@@ -20,6 +20,7 @@
                 <button class="ghost" id="settingsButton" title="Open settings">⚙ Settings</button>
                 <button class="ghost" id="refreshButton" title="Reload data">⟳ Refresh</button>
                 <button class="primary" id="newAssetButton">＋ New asset</button>
+                <button class="ghost" id="monitorToggle" title="Show monitor">📡 Monitor</button>
             </div>
         </header>
 
@@ -79,12 +80,65 @@
                             <th>Serial</th>
                             <th>Location</th>
                             <th>Modified</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="assetTableBody">
-                        <tr><td colspan="7" class="muted">Fetching assets…</td></tr>
+                        <tr><td colspan="8" class="muted">Fetching assets…</td></tr>
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Tools</h2>
+                    <p class="muted">Import/export CSV, run bulk updates, and manage saved searches.</p>
+                </div>
+                <div class="chip" id="monitorSummary">Ready</div>
+            </div>
+
+            <div class="tools-grid">
+                <div class="card">
+                    <h3>Import / Export</h3>
+                    <div class="tool-row">
+                        <input type="file" id="importFile" accept=".csv" hidden />
+                        <button id="importButton">Import CSV</button>
+                        <button id="exportTemplateButton">Export via template</button>
+                        <button id="exportAllButton">Export all fields</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Bulk update</h3>
+                    <div class="tool-row">
+                        <select id="bulkField"></select>
+                        <select id="bulkOp">
+                            <option value="replace">Replace</option>
+                            <option value="append">Append</option>
+                        </select>
+                        <input id="bulkValue" placeholder="New value or current_date" />
+                    </div>
+                    <div class="tool-row">
+                        <select id="bulkPreset"></select>
+                        <button id="runBulk">Run bulk update</button>
+                    </div>
+                    <p class="muted small">Uses current filters; limit 500 by default.</p>
+                </div>
+
+                <div class="card">
+                    <h3>Saved searches</h3>
+                    <div class="tool-row">
+                        <input id="savedSearchName" placeholder="Name" />
+                        <button id="saveSearch">Save current filters</button>
+                    </div>
+                    <div class="tool-row">
+                        <select id="savedSearchSelect"></select>
+                        <button id="applySearch">Apply</button>
+                        <button id="deleteSearch">Delete</button>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -137,6 +191,23 @@
             </div>
         </section>
     </div>
+
+    <aside class="monitor-panel" id="monitorPanel" hidden>
+        <div class="monitor-header">
+            <div>
+                <h3>Monitor</h3>
+                <p class="muted small">Recent changes and stats</p>
+            </div>
+            <button class="ghost" id="monitorClose">✕</button>
+        </div>
+        <div class="monitor-content">
+            <div class="monitor-stats" id="monitorStats">Loading…</div>
+            <h4>Recently modified (7d)</h4>
+            <div class="monitor-list" id="monitorModified">Loading…</div>
+            <h4>Recently added (7d)</h4>
+            <div class="monitor-list" id="monitorAdded">Loading…</div>
+        </div>
+    </aside>
 
     <div class="drawer" id="drawer" hidden>
         <div class="drawer-body">
