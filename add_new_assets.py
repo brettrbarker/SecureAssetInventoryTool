@@ -768,6 +768,534 @@ class AddNewAssetsWindow:
             return False  # Error already handled in helper methods
 
 
+class AddParentChildWindow:
+    """Window for adding a parent asset and a child asset simultaneously.
+
+    Shows two side-by-side scrollable form panels — one for the parent asset
+    and one for the child asset.  Both panels mirror the standard Required /
+    Additional field layout so all the same fields are available.
+
+    Workflow
+    --------
+    1. Fill in Required (and optional Additional) fields for each asset.
+    2. Click "Add Both Assets" (or Ctrl+Enter) to save both records at once.
+    3. In *Add Multiple* mode only UNIQUE_FIELDS (e.g. Serial Number) are
+       cleared after each submission so you can quickly add another pair that
+       shares the same make / model / type.
+
+    Child-specific defaults
+    -----------------------
+    • "Child Asset? (Y/N)" is pre-set to 'Y' in the child panel.
+    """
+
+    def __init__(self, parent, config=None):
+        self.parent = parent
+
+        self.config_manager = ConfigManager()
+        self.config = config or self.config_manager.get_config()
+        self.template_path = self.config.default_template_path
+
+        self.db = AssetDatabase(self.config.database_path)
+
+        self.dropdown_fields = set(self.config.dropdown_fields)
+        self.required_fields = set(self.config.required_fields)
+        self.excluded_fields = set(self.config.excluded_fields)
+        self.unique_fields = set(self.config.unique_fields)
+
+        self.db_fields = compute_db_fields_from_template(self.db, self.config)
+        self.dropdown_headers_in_template = set(
+            f['display_name'] for f in compute_dropdown_fields(self.db_fields, self.config)
+        )
+
+        self.window = ctk.CTkToplevel(parent)
+        self.window.title("Add Parent / Child Assets")
+        self.window.geometry("1500x820")
+        self.window.minsize(1200, 650)
+
+        # Shared template state
+        self.headers: List[str] = []
+        self.unique_values: Dict[str, List[str]] = {}
+
+        # Per-panel widget maps
+        self.parent_widgets: Dict[str, ctk.CTkBaseClass] = {}
+        self.parent_dropdown_vars: Dict[str, ctk.StringVar] = {}
+        self.child_widgets: Dict[str, ctk.CTkBaseClass] = {}
+        self.child_dropdown_vars: Dict[str, ctk.StringVar] = {}
+
+        self._build_layout()
+        self._load_template_and_build_form()
+        self._bind_shortcuts()
+
+        self.window.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.window.transient(parent)
+
+    # ─────────────────────────── Layout ──────────────────────────────────── #
+
+    def _build_layout(self):
+        """Build two side-by-side panel layout with a shared action bar."""
+        # ── Main two-panel content area ──────────────────────────────────── #
+        content = ctk.CTkFrame(self.window, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_columnconfigure(1, weight=1)
+        content.grid_rowconfigure(0, weight=1)
+
+        # ── Parent panel ─────────────────────────────────────────────────── #
+        parent_outer = ctk.CTkFrame(content)
+        parent_outer.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        parent_outer.grid_rowconfigure(1, weight=1)
+        parent_outer.grid_columnconfigure(0, weight=1)
+
+        parent_header = ctk.CTkFrame(parent_outer, fg_color=("gray80", "gray20"))
+        parent_header.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(
+            parent_header,
+            text="🖥️  Parent Asset",
+            font=ctk.CTkFont(size=17, weight="bold"),
+        ).pack(pady=8, padx=14, anchor="w")
+
+        self.parent_form = ctk.CTkScrollableFrame(parent_outer)
+        self.parent_form.grid(row=1, column=0, sticky="nsew")
+        self.parent_form.columnconfigure(1, weight=1)
+        self.parent_form.columnconfigure(3, weight=1)
+
+        # ── Child panel ──────────────────────────────────────────────────── #
+        child_outer = ctk.CTkFrame(content)
+        child_outer.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        child_outer.grid_rowconfigure(1, weight=1)
+        child_outer.grid_columnconfigure(0, weight=1)
+
+        child_header = ctk.CTkFrame(child_outer, fg_color=("gray70", "gray28"))
+        child_header.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(
+            child_header,
+            text="📦  Child Asset",
+            font=ctk.CTkFont(size=17, weight="bold"),
+        ).pack(pady=8, padx=14, anchor="w")
+
+        self.child_form = ctk.CTkScrollableFrame(child_outer)
+        self.child_form.grid(row=1, column=0, sticky="nsew")
+        self.child_form.columnconfigure(1, weight=1)
+        self.child_form.columnconfigure(3, weight=1)
+
+        # ── Shared action bar ────────────────────────────────────────────── #
+        action_frame = ctk.CTkFrame(self.window)
+        action_frame.pack(fill="x", padx=10, pady=8)
+
+        ctk.CTkLabel(
+            action_frame,
+            text=(
+                "💡 Ctrl+Enter = Add Both  •  Ctrl+Backspace = Clear  •  "
+                "'Add Multiple' keeps make/model between pairs"
+            ),
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+        ).pack(side="left", padx=15, pady=10)
+
+        self.add_multiple_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            action_frame, text="Add Multiple", variable=self.add_multiple_var
+        ).pack(side="right", padx=10, pady=10)
+
+        self.request_label_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            action_frame,
+            text="Request Labels",
+            variable=self.request_label_var,
+            fg_color="#2d5a27",
+            hover_color="#1e3f1b",
+        ).pack(side="right", padx=10, pady=10)
+
+        ctk.CTkButton(
+            action_frame, text="Add Both Assets", command=self._add_both
+        ).pack(side="right", padx=10, pady=10)
+
+        ctk.CTkButton(
+            action_frame,
+            text="Clear Forms",
+            fg_color="gray",
+            command=self._clear_forms,
+        ).pack(side="right", padx=10, pady=10)
+
+    # ──────────────────── Template / form construction ───────────────────── #
+
+    def _load_template_and_build_form(self):
+        """Load the CSV template and populate both panels."""
+        if not os.path.exists(self.template_path):
+            messagebox.showerror(
+                "Template Missing",
+                f"Template file not found:\n{self.template_path}",
+                parent=self.window,
+            )
+            return
+
+        try:
+            with open(self.template_path, newline='', encoding='utf-8-sig') as f:
+                reader = list(csv.reader(f))
+        except Exception as e:
+            messagebox.showerror("Read Error", f"Failed to read template: {e}", parent=self.window)
+            return
+
+        if not reader:
+            messagebox.showerror("Template Error", "Template CSV is empty.", parent=self.window)
+            return
+
+        self.headers = reader[0]
+
+        # Populate dropdown values from the database (same logic as AddNewAssetsWindow)
+        try:
+            column_mapping = self.db.get_dynamic_column_mapping(self.template_path)
+            for field in self.dropdown_headers_in_template:
+                if field in self.headers:
+                    db_column = column_mapping.get(field)
+                    if db_column:
+                        values = self.db.get_unique_values(db_column)
+                        if values:
+                            filtered = sorted([v for v in values if v and v.strip()])
+                            if filtered:
+                                self.unique_values[field] = filtered
+        except Exception as e:
+            print(f"Warning: Could not load dropdown values from database: {e}")
+
+        required_headers = [
+            h for h in self.headers
+            if h in self.required_fields and h not in self.excluded_fields
+        ]
+        additional_headers = [
+            h for h in self.headers
+            if h not in self.required_fields and h not in self.excluded_fields
+        ]
+
+        self._build_asset_panel(
+            self.parent_form, required_headers, additional_headers,
+            self.parent_widgets, self.parent_dropdown_vars, is_child=False,
+        )
+        self._build_asset_panel(
+            self.child_form, required_headers, additional_headers,
+            self.child_widgets, self.child_dropdown_vars, is_child=True,
+        )
+
+        # Wire up auto-sync: parent SN  →  child Related Asset Sync Keys
+        self._setup_sync_key_binding()
+
+    def _build_asset_panel(self, form, required_headers, additional_headers,
+                           widgets, dropdown_vars, is_child: bool):
+        """Populate a scrollable panel with Required and Additional field sections."""
+        current_row = 0
+
+        if required_headers:
+            ctk.CTkLabel(
+                form, text="Required Fields", anchor="w",
+                font=ctk.CTkFont(size=14, weight="bold"),
+            ).grid(row=current_row, column=0, columnspan=4, sticky="we", padx=8, pady=(8, 4))
+            current_row += 1
+            current_row = self._create_field_section(
+                form, required_headers, current_row, widgets, dropdown_vars, is_child,
+            )
+            ctk.CTkFrame(form, height=2).grid(
+                row=current_row, column=0, columnspan=4, sticky="we", padx=4, pady=(6, 10)
+            )
+            current_row += 1
+
+        if additional_headers:
+            ctk.CTkLabel(
+                form, text="Additional Fields", anchor="w",
+                font=ctk.CTkFont(size=14, weight="bold"),
+            ).grid(row=current_row, column=0, columnspan=4, sticky="we", padx=8, pady=(0, 4))
+            current_row += 1
+            self._create_field_section(
+                form, additional_headers, current_row, widgets, dropdown_vars, is_child,
+            )
+
+    def _create_field_section(self, form, headers, start_row,
+                              widgets, dropdown_vars, is_child: bool) -> int:
+        """Create a two-column (label + input) section and return the next row index."""
+        for idx, header in enumerate(headers):
+            col_group = idx % 2
+            row = start_row + idx // 2
+            base_col = col_group * 2
+
+            ctk.CTkLabel(form, text=header + ":").grid(
+                row=row, column=base_col, sticky="e", padx=8, pady=4
+            )
+
+            if header in self.dropdown_headers_in_template and header in self.unique_values:
+                default_val = "Y" if (is_child and header == "Child Asset? (Y/N)") else ""
+                var = ctk.StringVar(value=default_val)
+                opt = SearchableDropdown(
+                    form, values=[""] + self.unique_values[header], variable=var
+                )
+                opt.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
+                dropdown_vars[header] = var
+                widgets[header] = opt
+
+            elif "date" in header.lower():
+                var = ctk.StringVar(value="")
+                dp = DatePicker(form, variable=var)
+                dp.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
+                dropdown_vars[header] = var
+                widgets[header] = dp
+                if header.lower() == AUDIT_DATE_HEADER:
+                    var.set(_today_audit_date_str())
+
+            elif self.db.should_field_be_multiline(header, self.template_path):
+                tb = ctk.CTkTextbox(form, height=80)
+                tb.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
+                widgets[header] = tb
+
+            else:
+                entry = ctk.CTkEntry(form)
+                entry.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
+                if is_child and header == "Child Asset? (Y/N)":
+                    entry.insert(0, "Y")
+                widgets[header] = entry
+
+        return start_row + (len(headers) + 1) // 2
+
+    # ───────────────────────── Form utilities ────────────────────────────── #
+
+    def _setup_sync_key_binding(self):
+        """Mirror parent Serial Number into child Related Asset Sync Keys live."""
+        parent_sn = self.parent_widgets.get("Serial Number")
+        child_sync = (
+            self.child_widgets.get("Related Asset Sync Keys")
+            or self.child_widgets.get("Related Asset Sync Key")
+        )
+        if not parent_sn or not child_sync:
+            return
+
+        def _sync(event=None):
+            # Read the current parent SN value
+            sn = parent_sn.get() if isinstance(parent_sn, ctk.CTkEntry) else ""
+
+            # Write to child sync key widget (handles both Entry and Textbox)
+            if isinstance(child_sync, ctk.CTkTextbox):
+                child_sync.delete("1.0", "end")
+                child_sync.insert("1.0", sn)
+            elif isinstance(child_sync, ctk.CTkEntry):
+                child_sync.delete(0, "end")
+                child_sync.insert(0, sn)
+
+        parent_sn.bind("<KeyRelease>", _sync)
+        # Also fire on paste (Windows: <<Paste>>)
+        parent_sn.bind("<<Paste>>", lambda e: parent_sn.after(10, _sync))
+
+    def _refocus(self):
+        try:
+            self.window.lift()
+            self.window.focus_force()
+        except Exception:
+            pass
+
+    def _focus_parent_serial(self):
+        widget = self.parent_widgets.get("Serial Number")
+        if widget:
+            try:
+                widget.focus_set()
+            except Exception:
+                pass
+
+    def _bind_shortcuts(self):
+        self.window.bind("<Control-Return>", self._submit_shortcut)
+        self.window.bind("<Control-KP_Enter>", self._submit_shortcut)
+        self.window.bind("<Control-BackSpace>", self._clear_shortcut)
+
+    def _submit_shortcut(self, event=None):
+        self._add_both()
+        return "break"
+
+    def _clear_shortcut(self, event=None):
+        self._clear_forms()
+        self._refocus()
+        self._focus_parent_serial()
+        return "break"
+
+    def _on_closing(self):
+        try:
+            self.window.unbind("<Control-Return>")
+            self.window.unbind("<Control-KP_Enter>")
+            self.window.unbind("<Control-BackSpace>")
+        except Exception:
+            pass
+        self.window.destroy()
+
+    def _get_field_value(self, header, widget, dropdown_vars) -> str:
+        """Read the current string value from any widget type."""
+        if header in dropdown_vars:
+            return dropdown_vars[header].get().strip()
+        if isinstance(widget, ctk.CTkTextbox):
+            return widget.get("0.0", "end-1c").strip()
+        return widget.get().strip()
+
+    def _clear_panel(self, widgets, dropdown_vars, is_child: bool):
+        """Clear every field in one panel, restoring child defaults."""
+        for header, widget in widgets.items():
+            is_child_yn = is_child and header == "Child Asset? (Y/N)"
+            default = "Y" if is_child_yn else ""
+
+            if header in dropdown_vars:
+                dropdown_vars[header].set(default)
+            elif isinstance(widget, ctk.CTkTextbox):
+                widget.delete("1.0", "end")
+            else:
+                widget.delete(0, "end")
+                if is_child_yn:
+                    widget.insert(0, "Y")
+
+    def _clear_forms(self):
+        self._clear_panel(self.parent_widgets, self.parent_dropdown_vars, is_child=False)
+        self._clear_panel(self.child_widgets, self.child_dropdown_vars, is_child=True)
+
+    def _clear_unique_fields(self, widgets, dropdown_vars):
+        """Clear only UNIQUE_FIELDS in a panel (used by Add Multiple mode)."""
+        for header, widget in widgets.items():
+            if header not in self.unique_fields:
+                continue
+            if header in dropdown_vars:
+                dropdown_vars[header].set("")
+            elif isinstance(widget, ctk.CTkTextbox):
+                widget.delete("1.0", "end")
+            else:
+                widget.delete(0, "end")
+
+    # ────────────────── Validation / data extraction ─────────────────────── #
+
+    def _validate_panel(self, widgets, dropdown_vars) -> list[str]:
+        """Return a list of missing required field names for the given panel."""
+        missing = []
+        for header in self.headers:
+            if header in self.excluded_fields or header not in self.required_fields:
+                continue
+            widget = widgets.get(header)
+            if not widget:
+                continue
+            if not self._get_field_value(header, widget, dropdown_vars):
+                missing.append(header)
+        return missing
+
+    def _extract_panel_data(self, widgets, dropdown_vars) -> tuple[list[str], str]:
+        """Extract form data for one panel. Returns (row_values, serial_number)."""
+        row_values = []
+        serial_number = None
+        for header in self.headers:
+            if header in self.excluded_fields:
+                row_values.append("")
+                continue
+            widget = widgets.get(header)
+            val = self._get_field_value(header, widget, dropdown_vars) if widget else ""
+            if "date" in header.lower() and val:
+                val = normalize_date_string(val)
+            if header.lower() == "serial number":
+                serial_number = val
+            row_values.append(val)
+        return row_values, serial_number
+
+    def _convert_row_to_asset_data(self, row_values: list) -> Dict[str, str]:
+        """Map form row values to database column names."""
+        asset_data = {}
+        column_mapping = self.db.get_dynamic_column_mapping(self.template_path)
+        for i, header in enumerate(self.headers):
+            if i < len(row_values) and row_values[i]:
+                db_column = column_mapping.get(header)
+                if db_column:
+                    value = row_values[i].strip()
+                    if value:
+                        asset_data[db_column] = value
+        return asset_data
+
+    def _write_asset(self, row_values: list, label: str) -> tuple[bool, int]:
+        """Save one asset to the database and optionally request a label.
+
+        Returns (success, asset_id).
+        """
+        try:
+            asset_data = self._convert_row_to_asset_data(row_values)
+            asset_id = self.db.add_asset(asset_data)
+            if self.request_label_var.get():
+                try:
+                    self.db.request_label(asset_id)
+                except Exception as e:
+                    print(f"Warning: {label} label request failed: {e}")
+            return True, asset_id
+        except Exception as e:
+            messagebox.showerror(
+                "Write Error",
+                f"Failed to save {label} asset: {e}",
+                parent=self.window,
+            )
+            self._refocus()
+            return False, -1
+
+    # ────────────────────────── Add Both ─────────────────────────────────── #
+
+    def _add_both(self):
+        """Validate both panels and save both assets to the database."""
+        if not self.headers:
+            messagebox.showerror("Error", "No template loaded.", parent=self.window)
+            return
+
+        parent_missing = self._validate_panel(self.parent_widgets, self.parent_dropdown_vars)
+        child_missing = self._validate_panel(self.child_widgets, self.child_dropdown_vars)
+
+        if parent_missing or child_missing:
+            parts = []
+            if parent_missing:
+                parts.append("Parent: " + ", ".join(parent_missing))
+            if child_missing:
+                parts.append("Child: " + ", ".join(child_missing))
+            messagebox.showerror(
+                "Missing Required Fields",
+                "Please fill in all required fields:\n\n" + "\n".join(parts),
+                parent=self.window,
+            )
+            self._refocus()
+            return
+
+        parent_row, parent_sn = self._extract_panel_data(
+            self.parent_widgets, self.parent_dropdown_vars
+        )
+        child_row, child_sn = self._extract_panel_data(
+            self.child_widgets, self.child_dropdown_vars
+        )
+
+        # Save parent first
+        parent_ok, parent_id = self._write_asset(parent_row, "parent")
+        if not parent_ok:
+            return
+
+        # Save child
+        child_ok, child_id = self._write_asset(child_row, "child")
+        if not child_ok:
+            messagebox.showwarning(
+                "Partial Success",
+                (
+                    f"Parent asset was saved (ID: {parent_id}) but the child "
+                    "asset failed to save.\n\nCheck the child fields and try adding "
+                    "the child manually via 'Add New Assets'."
+                ),
+                parent=self.window,
+            )
+            self._refocus()
+            return
+
+        success_msg = (
+            "Both assets saved successfully!\n\n"
+            f"Parent: {parent_sn or '(no SN)'}  —  ID: {parent_id}\n"
+            f"Child:  {child_sn or '(no SN)'}  —  ID: {child_id}"
+        )
+
+        if self.add_multiple_var.get():
+            messagebox.showinfo("Success", success_msg, parent=self.window)
+            self._clear_unique_fields(self.parent_widgets, self.parent_dropdown_vars)
+            self._clear_unique_fields(self.child_widgets, self.child_dropdown_vars)
+            self._refocus()
+            self._focus_parent_serial()
+        else:
+            messagebox.showinfo("Success", success_msg, parent=self.window)
+            self._clear_forms()
+            self.window.destroy()
+
+
 # Minimal manual test harness
 if __name__ == "__main__":
     ctk.set_appearance_mode("dark")

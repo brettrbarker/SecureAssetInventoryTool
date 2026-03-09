@@ -11,7 +11,7 @@ VERSION = "1.0.251216"  # Format: Major.Minor.YYMMDD
 # Import settings and other modules with error handling for invalid config paths
 try:
     from settings_menu import SettingsWindow
-    from add_new_assets import AddNewAssetsWindow
+    from add_new_assets import AddNewAssetsWindow, AddParentChildWindow
     from export_service import export_service
     from monitor_window import MonitorWindow
     from reports_analysis import open_reports_analysis_window
@@ -56,8 +56,8 @@ class MainMenu:
         ctk.set_appearance_mode(self.config.theme)
         ctk.set_default_color_theme("dark-blue")
 
-        self.root.geometry("500x680")
-        self.root.minsize(500, 680)
+        self.root.geometry("500x760")
+        self.root.minsize(500, 760)
         self.root.resizable(False, False)
         self.root.title("Secure Asset Inventory Tool")
 
@@ -145,7 +145,21 @@ class MainMenu:
                                          corner_radius=12)
         self.buttonMonitor.grid(row=2, column=1, padx=8, pady=8, sticky="ew")
 
-        # Row 3: Settings (bottom row, spanning both columns)
+        # Row 3: Add Parent/Child Assets (full width)
+        self.buttonParentChild = ctk.CTkButton(
+            buttons_frame,
+            text="👥 Add Parent / Child Assets",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            command=self.open_add_parent_child,
+            width=button_width * 2,
+            height=65,
+            corner_radius=12,
+            fg_color=("#1a5c8a", "#1e3f5a"),
+            hover_color=("#1d6fa0", "#245070"),
+        )
+        self.buttonParentChild.grid(row=3, column=0, columnspan=2, padx=8, pady=8, sticky="ew")
+
+        # Row 4: Settings (bottom row, spanning both columns)
         self.buttonSettings = ctk.CTkButton(buttons_frame, text="⚙️ Settings", 
                                           font=ctk.CTkFont(size=18, weight="bold"), 
                                           command=self.open_settings,
@@ -153,7 +167,7 @@ class MainMenu:
                                           corner_radius=12,
                                           fg_color=("gray50", "gray30"), 
                                           hover_color=("gray60", "gray40"))
-        self.buttonSettings.grid(row=3, column=0, columnspan=2, padx=8, pady=8, sticky="ew")
+        self.buttonSettings.grid(row=4, column=0, columnspan=2, padx=8, pady=8, sticky="ew")
         
         # Footer with version info
         footer_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -181,7 +195,7 @@ class MainMenu:
         y = top_margin
         
         # Set window position in top-left corner
-        self.root.geometry(f"500x680+{x}+{y}")
+        self.root.geometry(f"500x760+{x}+{y}")
     
     def _handle_module_load_failure(self):
         """Handle the case where modules couldn't load due to invalid config paths."""
@@ -426,6 +440,13 @@ class MainMenu:
             return
         # Pass current config so window uses latest settings
         AddNewAssetsWindow(self.root, self.config)
+
+    @performance_monitor("Open Add Parent/Child Assets")
+    def open_add_parent_child(self):
+        if not MODULES_LOADED:
+            messagebox.showerror("Error", "Modules not loaded. Please restart application.", parent=self.root)
+            return
+        AddParentChildWindow(self.root, self.config)
 
     @performance_monitor("Open Browse Assets")
     def open_browse_assets(self):
