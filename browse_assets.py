@@ -444,7 +444,7 @@ class BrowseAssetsWindow:
         
         # Field dropdown - use SearchableDropdown with alphabetized list
         field_var = tk.StringVar(value=field if field else "")
-        field_names = sorted([f['display_name'] for f in self.db_fields if f['is_searchable']])
+        field_names = sorted([f['display_name'] for f in self.db_fields if f.get('is_searchable', True)])
         field_dropdown = SearchableDropdown(field_operator_frame, values=field_names, 
                                            variable=field_var, width=140, height=28)
         field_dropdown.pack(side="left", padx=(0, 5))
@@ -1491,33 +1491,14 @@ class BrowseAssetsWindow:
         self._set_busy(True)
         self.status_label.configure(text="Loading all assets…")
 
-        priority_fields = [
-            'asset_no', 'asset_type', 'manufacturer', 'model',
-            'serial_number', 'status', 'location',
-        ]
         page_size = int(self.items_per_page.get())
 
         def _fetch():
             # ── background thread ──────────────────────────────────────────
-            if hasattr(self.db, 'get_table_fields'):
-                db_fields = self.db.get_table_fields()
-            else:
-                sample = self.db.search_assets({}, limit=1)
-                if sample:
-                    db_fields = [
-                        {'db_name': k, 'display_name': k.replace('_', ' ').title()}
-                        for k in sample[0].keys() if k != 'id'
-                    ]
-                else:
-                    db_fields = []
-
-            prio = [f for f in db_fields if f['db_name'] in priority_fields]
-            rest = [f for f in db_fields if f['db_name'] not in priority_fields]
-            prio.sort(key=lambda x: (
-                priority_fields.index(x['db_name']) if x['db_name'] in priority_fields else 999
-            ))
-            db_fields = prio + rest
-
+            # _get_database_fields() returns fully-structured dicts with all
+            # required keys (is_searchable, is_filterable, db_name, display_name)
+            # and already applies priority ordering.
+            db_fields = self._get_database_fields()
             all_assets = self.db.search_assets({}, limit=10000)
             return db_fields, all_assets
 
