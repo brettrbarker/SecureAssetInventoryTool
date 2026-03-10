@@ -26,17 +26,28 @@
     ],
     "excluded_fields": [
         "Asset No.",
-        "Version"
+        "Version",
+        "Client (user names, semicolon delimited)",
+        "Service Contract? (Y/N)",
+        "Contract Expiration Date",
+        "Billing Rate Name",
+        "Warranty Type",
+        "Multi-Install? (Y/N, Child Assets only)",
+        "Install Count (Child Assets only)",
+        "Reservable? (Y/N)",
+        "Discovery Sync ID",
+        "Delete (Y/N)",
+        "NOTE: * = Field required for new records."
     ],
     "unique_fields": [
         "Serial Number",
         "IP Address",
         "Network Name",
         "MAC Address",
-        "Phone Number",
         "Media Control#",
         "Tamper Seal",
-        "TSCO Control#"
+        "TSCO Control#",
+        "Phone Number"
     ],
     "monitor_primary_fields": [
         "Serial Number",
