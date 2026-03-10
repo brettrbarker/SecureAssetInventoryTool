@@ -931,9 +931,10 @@ class AddParentChildWindow:
             hover_color="#1e3f1b",
         ).pack(side="right", padx=10, pady=10)
 
-        ctk.CTkButton(
+        self.add_both_btn = ctk.CTkButton(
             action_frame, text="Add Both Assets", command=self._add_both
-        ).pack(side="right", padx=10, pady=10)
+        )
+        self.add_both_btn.pack(side="right", padx=10, pady=10)
 
         ctk.CTkButton(
             action_frame,
@@ -945,7 +946,7 @@ class AddParentChildWindow:
     # ──────────────────── Template / form construction ───────────────────── #
 
     def _load_template_and_build_form(self):
-        """Load the CSV template and populate both panels."""
+        """Load the CSV template and populate both panels (DB data loaded off-thread)."""
         if not os.path.exists(self.template_path):
             messagebox.showerror(
                 "Template Missing",
@@ -967,21 +968,6 @@ class AddParentChildWindow:
 
         self.headers = reader[0]
 
-        # Populate dropdown values from the database (same logic as AddNewAssetsWindow)
-        try:
-            column_mapping = self.db.get_dynamic_column_mapping(self.template_path)
-            for field in self.dropdown_headers_in_template:
-                if field in self.headers:
-                    db_column = column_mapping.get(field)
-                    if db_column:
-                        values = self.db.get_unique_values(db_column)
-                        if values:
-                            filtered = sorted([v for v in values if v and v.strip()])
-                            if filtered:
-                                self.unique_values[field] = filtered
-        except Exception as e:
-            print(f"Warning: Could not load dropdown values from database: {e}")
-
         required_headers = [
             h for h in self.headers
             if h in self.required_fields and h not in self.excluded_fields
@@ -990,21 +976,83 @@ class AddParentChildWindow:
             h for h in self.headers
             if h not in self.required_fields and h not in self.excluded_fields
         ]
+        all_non_excluded = required_headers + additional_headers
 
-        self._build_asset_panel(
-            self.parent_form, required_headers, additional_headers,
-            self.parent_widgets, self.parent_dropdown_vars, is_child=False,
+        # Show loading placeholders while DB queries run in background
+        loading_parent = ctk.CTkLabel(
+            self.parent_form, text="Loading fields…",
+            font=ctk.CTkFont(size=14), text_color="gray",
         )
-        self._build_asset_panel(
-            self.child_form, required_headers, additional_headers,
-            self.child_widgets, self.child_dropdown_vars, is_child=True,
+        loading_parent.grid(row=0, column=0, columnspan=4, pady=40)
+        loading_child = ctk.CTkLabel(
+            self.child_form, text="Loading fields…",
+            font=ctk.CTkFont(size=14), text_color="gray",
         )
+        loading_child.grid(row=0, column=0, columnspan=4, pady=40)
 
-        # Wire up auto-sync: parent SN  →  child Related Asset Sync Keys
-        self._setup_sync_key_binding()
+        template_path = self.template_path
+        dropdown_headers = set(self.dropdown_headers_in_template)
+        headers_snapshot = list(self.headers)
+
+        def _fetch_db_data():
+            """Background: gather unique dropdown values and multiline field set."""
+            unique_values: Dict[str, List[str]] = {}
+            multiline_fields: set = set()
+            try:
+                column_mapping = self.db.get_dynamic_column_mapping(template_path)
+                for field in dropdown_headers:
+                    if field in headers_snapshot:
+                        db_column = column_mapping.get(field)
+                        if db_column:
+                            values = self.db.get_unique_values(db_column)
+                            if values:
+                                filtered = sorted([v for v in values if v and v.strip()])
+                                if filtered:
+                                    unique_values[field] = filtered
+            except Exception as e:
+                print(f"Warning: Could not load dropdown values from database: {e}")
+            try:
+                for header in all_non_excluded:
+                    if self.db.should_field_be_multiline(header, template_path):
+                        multiline_fields.add(header)
+            except Exception as e:
+                print(f"Warning: Could not determine multiline fields: {e}")
+            return unique_values, multiline_fields
+
+        def _on_fetch_done(result):
+            """Main thread: discard placeholders and build all widgets."""
+            unique_values, multiline_fields = result
+            for lbl in (loading_parent, loading_child):
+                try:
+                    lbl.destroy()
+                except Exception:
+                    pass
+            self.unique_values = unique_values
+            self._build_asset_panel(
+                self.parent_form, required_headers, additional_headers,
+                self.parent_widgets, self.parent_dropdown_vars, is_child=False,
+                multiline_fields=multiline_fields,
+            )
+            self._build_asset_panel(
+                self.child_form, required_headers, additional_headers,
+                self.child_widgets, self.child_dropdown_vars, is_child=True,
+                multiline_fields=multiline_fields,
+            )
+            self._setup_sync_key_binding()
+
+        def _on_fetch_error(exc):
+            for lbl in (loading_parent, loading_child):
+                try:
+                    lbl.configure(text=f"Error loading fields: {exc}")
+                except Exception:
+                    pass
+            print(f"Error loading form data: {exc}")
+
+        run_async(_fetch_db_data, _on_fetch_done, _on_fetch_error, self.window)
 
     def _build_asset_panel(self, form, required_headers, additional_headers,
-                           widgets, dropdown_vars, is_child: bool):
+                           widgets, dropdown_vars, is_child: bool,
+                           multiline_fields: set = None):
         """Populate a scrollable panel with Required and Additional field sections."""
         current_row = 0
 
@@ -1016,6 +1064,7 @@ class AddParentChildWindow:
             current_row += 1
             current_row = self._create_field_section(
                 form, required_headers, current_row, widgets, dropdown_vars, is_child,
+                multiline_fields=multiline_fields,
             )
             ctk.CTkFrame(form, height=2).grid(
                 row=current_row, column=0, columnspan=4, sticky="we", padx=4, pady=(6, 10)
@@ -1030,11 +1079,17 @@ class AddParentChildWindow:
             current_row += 1
             self._create_field_section(
                 form, additional_headers, current_row, widgets, dropdown_vars, is_child,
+                multiline_fields=multiline_fields,
             )
 
     def _create_field_section(self, form, headers, start_row,
-                              widgets, dropdown_vars, is_child: bool) -> int:
-        """Create a two-column (label + input) section and return the next row index."""
+                              widgets, dropdown_vars, is_child: bool,
+                              multiline_fields: set = None) -> int:
+        """Create a two-column (label + input) section and return the next row index.
+
+        multiline_fields: pre-computed set of field names to render as CTkTextbox.
+        If None, falls back to querying the DB inline.
+        """
         for idx, header in enumerate(headers):
             col_group = idx % 2
             row = start_row + idx // 2
@@ -1063,7 +1118,9 @@ class AddParentChildWindow:
                 if header.lower() == AUDIT_DATE_HEADER:
                     var.set(_today_audit_date_str())
 
-            elif self.db.should_field_be_multiline(header, self.template_path):
+            elif (multiline_fields is not None and header in multiline_fields) or (
+                multiline_fields is None and self.db.should_field_be_multiline(header, self.template_path)
+            ):
                 tb = ctk.CTkTextbox(form, height=80)
                 tb.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
                 widgets[header] = tb
@@ -1124,6 +1181,14 @@ class AddParentChildWindow:
         self.window.bind("<Control-Return>", self._submit_shortcut)
         self.window.bind("<Control-KP_Enter>", self._submit_shortcut)
         self.window.bind("<Control-BackSpace>", self._clear_shortcut)
+
+    def _set_busy(self, busy: bool):
+        """Disable/enable the Add Both button during background operations."""
+        state = "disabled" if busy else "normal"
+        try:
+            self.add_both_btn.configure(state=state)
+        except Exception:
+            pass
 
     def _submit_shortcut(self, event=None):
         self._add_both()
@@ -1228,33 +1293,10 @@ class AddParentChildWindow:
                         asset_data[db_column] = value
         return asset_data
 
-    def _write_asset(self, row_values: list, label: str) -> tuple[bool, int]:
-        """Save one asset to the database and optionally request a label.
-
-        Returns (success, asset_id).
-        """
-        try:
-            asset_data = self._convert_row_to_asset_data(row_values)
-            asset_id = self.db.add_asset(asset_data)
-            if self.request_label_var.get():
-                try:
-                    self.db.request_label(asset_id)
-                except Exception as e:
-                    print(f"Warning: {label} label request failed: {e}")
-            return True, asset_id
-        except Exception as e:
-            messagebox.showerror(
-                "Write Error",
-                f"Failed to save {label} asset: {e}",
-                parent=self.window,
-            )
-            self._refocus()
-            return False, -1
-
     # ────────────────────────── Add Both ─────────────────────────────────── #
 
     def _add_both(self):
-        """Validate both panels and save both assets to the database."""
+        """Validate both panels then save both assets off the UI thread."""
         if not self.headers:
             messagebox.showerror("Error", "No template loaded.", parent=self.window)
             return
@@ -1283,42 +1325,76 @@ class AddParentChildWindow:
             self.child_widgets, self.child_dropdown_vars
         )
 
-        # Save parent first
-        parent_ok, parent_id = self._write_asset(parent_row, "parent")
-        if not parent_ok:
-            return
+        self._set_busy(True)
+        request_label = self.request_label_var.get()
 
-        # Save child
-        child_ok, child_id = self._write_asset(child_row, "child")
-        if not child_ok:
-            messagebox.showwarning(
-                "Partial Success",
-                (
-                    f"Parent asset was saved (ID: {parent_id}) but the child "
-                    "asset failed to save.\n\nCheck the child fields and try adding "
-                    "the child manually via 'Add New Assets'."
-                ),
+        def _save():
+            # Save parent asset
+            parent_data = self._convert_row_to_asset_data(parent_row)
+            parent_id = self.db.add_asset(parent_data)
+            if request_label:
+                try:
+                    self.db.request_label(parent_id)
+                except Exception as e:
+                    print(f"Warning: parent label request failed: {e}")
+
+            # Save child asset; capture any failure so we can report partial success
+            try:
+                child_data = self._convert_row_to_asset_data(child_row)
+                child_id = self.db.add_asset(child_data)
+                if request_label:
+                    try:
+                        self.db.request_label(child_id)
+                    except Exception as e:
+                        print(f"Warning: child label request failed: {e}")
+                return parent_id, child_id, None
+            except Exception as child_exc:
+                return parent_id, None, child_exc
+
+        def _on_done(result):
+            self._set_busy(False)
+            parent_id, child_id, child_error = result
+
+            if child_error is not None:
+                messagebox.showwarning(
+                    "Partial Success",
+                    (
+                        f"Parent asset was saved (ID: {parent_id}) but the child "
+                        f"asset failed to save: {child_error}\n\nCheck the child "
+                        "fields and try adding the child manually via 'Add New Assets'."
+                    ),
+                    parent=self.window,
+                )
+                self._refocus()
+                return
+
+            success_msg = (
+                "Both assets saved successfully!\n\n"
+                f"Parent: {parent_sn or '(no SN)'}  —  ID: {parent_id}\n"
+                f"Child:  {child_sn or '(no SN)'}  —  ID: {child_id}"
+            )
+
+            if self.add_multiple_var.get():
+                messagebox.showinfo("Success", success_msg, parent=self.window)
+                self._clear_unique_fields(self.parent_widgets, self.parent_dropdown_vars)
+                self._clear_unique_fields(self.child_widgets, self.child_dropdown_vars)
+                self._refocus()
+                self._focus_parent_serial()
+            else:
+                messagebox.showinfo("Success", success_msg, parent=self.window)
+                self._clear_forms()
+                self.window.destroy()
+
+        def _on_error(exc):
+            self._set_busy(False)
+            messagebox.showerror(
+                "Save Error",
+                f"Failed to save assets: {exc}",
                 parent=self.window,
             )
             self._refocus()
-            return
 
-        success_msg = (
-            "Both assets saved successfully!\n\n"
-            f"Parent: {parent_sn or '(no SN)'}  —  ID: {parent_id}\n"
-            f"Child:  {child_sn or '(no SN)'}  —  ID: {child_id}"
-        )
-
-        if self.add_multiple_var.get():
-            messagebox.showinfo("Success", success_msg, parent=self.window)
-            self._clear_unique_fields(self.parent_widgets, self.parent_dropdown_vars)
-            self._clear_unique_fields(self.child_widgets, self.child_dropdown_vars)
-            self._refocus()
-            self._focus_parent_serial()
-        else:
-            messagebox.showinfo("Success", success_msg, parent=self.window)
-            self._clear_forms()
-            self.window.destroy()
+        run_async(_save, _on_done, _on_error, self.window)
 
 
 # Minimal manual test harness
