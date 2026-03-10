@@ -13,6 +13,12 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any, Set
 from contextlib import contextmanager
 
+
+def _get_csv_delimiter(path: str) -> str:
+    """Return the field delimiter for *path* based on its file extension."""
+    return '\t' if path.lower().endswith('.tsv') else ','
+
+
 # Generated from AI prompt to convert to sqlite DB
 class AssetDatabase:
     """Manages SQLite database operations for asset management."""
@@ -99,7 +105,7 @@ class AssetDatabase:
         if template_path and os.path.exists(template_path):
             try:
                 with open(template_path, 'r', newline='', encoding='utf-8') as csvfile:
-                    reader = csv.reader(csvfile)
+                    reader = csv.reader(csvfile, delimiter=_get_csv_delimiter(template_path))
                     template_headers = next(reader)
             except Exception:
                 pass
@@ -160,7 +166,7 @@ class AssetDatabase:
         try:
             # Read template headers
             with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
-                reader = csv.reader(csvfile)
+                reader = csv.reader(csvfile, delimiter=_get_csv_delimiter(csv_path))
                 headers = next(reader)
             
             # Get current database columns
@@ -221,7 +227,7 @@ class AssetDatabase:
         if template_path and os.path.exists(template_path):
             try:
                 with open(template_path, 'r', newline='', encoding='utf-8') as csvfile:
-                    reader = csv.DictReader(csvfile)
+                    reader = csv.DictReader(csvfile, delimiter=_get_csv_delimiter(template_path))
                     for row in reader:
                         for header, value in row.items():
                             if header in headers and value and '\n' in str(value):
@@ -325,7 +331,7 @@ class AssetDatabase:
         if csv_path and os.path.exists(csv_path):
             try:
                 with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
-                    reader = csv.reader(csvfile)
+                    reader = csv.reader(csvfile, delimiter=_get_csv_delimiter(csv_path))
                     headers = next(reader)
                 
                 # Generate mappings for all fields dynamically
@@ -362,7 +368,7 @@ class AssetDatabase:
         try:
             # Read template headers
             with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
-                reader = csv.reader(csvfile)
+                reader = csv.reader(csvfile, delimiter=_get_csv_delimiter(csv_path))
                 headers = next(reader)
             
             # Get current columns and mapping
@@ -405,7 +411,7 @@ class AssetDatabase:
         imported_count = 0
         
         with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
+            reader = csv.DictReader(csvfile, delimiter=_get_csv_delimiter(csv_path))
             
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -452,7 +458,7 @@ class AssetDatabase:
         overwrite_mode = None  # 'all', 'none', or None for ask each time
         
         with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
+            reader = csv.DictReader(csvfile, delimiter=_get_csv_delimiter(csv_path))
             
             with self.get_connection() as conn:
                 cursor = conn.cursor()

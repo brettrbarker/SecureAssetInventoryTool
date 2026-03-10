@@ -188,7 +188,7 @@ class SettingsWindow:
         ctk.CTkButton(db_buttons_frame, text="Backup Database", command=self._backup_database).grid(row=0, column=2, sticky="ew", padx=2, pady=2)
         ctk.CTkButton(db_buttons_frame, text="Repair/Optimize", command=self._repair_database).grid(row=0, column=3, sticky="ew", padx=2, pady=2)
         ctk.CTkButton(db_buttons_frame, text="Database Info", command=self._show_database_info).grid(row=0, column=4, sticky="ew", padx=2, pady=2)
-        ctk.CTkButton(db_buttons_frame, text="Import CSV Data", command=self._import_csv_data).grid(row=0, column=5, sticky="ew", padx=2, pady=2)
+        ctk.CTkButton(db_buttons_frame, text="Import Data", command=self._import_csv_data).grid(row=0, column=5, sticky="ew", padx=2, pady=2)
         
         # Second row of database buttons (2 remaining buttons)
         ctk.CTkButton(db_buttons_frame, text="Export DB All", command=self._export_database_all).grid(row=1, column=0, sticky="ew", padx=2, pady=2)
@@ -1542,15 +1542,16 @@ class SettingsWindow:
             try:
                 # Check if template has data rows (not just headers)
                 with open(template_path, 'r', newline='', encoding='utf-8-sig') as f:
-                    reader = csv.reader(f)
+                    _delim = '\t' if template_path.lower().endswith('.tsv') else ','
+                    reader = csv.reader(f, delimiter=_delim)
                     headers = next(reader, [])
                     first_data_row = next(reader, None)
                     
                     if first_data_row:  # Template has data to import
                         # Count total rows
                         f.seek(0)
-                        next(csv.reader(f))  # Skip header
-                        row_count = sum(1 for _ in csv.reader(f))
+                        next(csv.reader(f, delimiter=_delim))  # Skip header
+                        row_count = sum(1 for _ in csv.reader(f, delimiter=_delim))
                         
                         # Ask user if they want to use the template file
                         template_name = os.path.basename(template_path)
@@ -1578,8 +1579,8 @@ class SettingsWindow:
         # If no file selected yet, prompt user to select one
         if not csv_file:
             csv_file = filedialog.askopenfilename(
-                title="Select CSV File to Import",
-                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                title="Select CSV or TSV File to Import",
+                filetypes=[("CSV/TSV files", "*.csv *.tsv"), ("CSV files", "*.csv"), ("TSV files", "*.tsv"), ("All files", "*.*")],
                 initialdir=self.config.get("output_directory", "assets/output_files")
             )
             if not csv_file:
@@ -1591,12 +1592,13 @@ class SettingsWindow:
             
             # Show confirmation dialog with preview
             with open(csv_file, 'r', newline='', encoding='utf-8-sig') as f:
-                reader = csv.reader(f)
+                _delim = '\t' if csv_file.lower().endswith('.tsv') else ','
+                reader = csv.reader(f, delimiter=_delim)
                 headers = next(reader, [])
                 # Count remaining rows for preview
                 f.seek(0)
-                next(csv.reader(f))  # Skip header
-                row_count = sum(1 for _ in csv.reader(f))
+                next(csv.reader(f, delimiter=_delim))  # Skip header
+                row_count = sum(1 for _ in csv.reader(f, delimiter=_delim))
             
             preview_text = f"Import Preview:\n\nFile: {os.path.basename(csv_file)}\nColumns: {len(headers)}\nRows to import: {row_count}\nSample Headers: {', '.join(headers[:5])}{'...' if len(headers) > 5 else ''}\n\nThis will add the data to your existing database.\nDuplicates will be detected and you'll be asked for confirmation.\n\nContinue with import?"
             
