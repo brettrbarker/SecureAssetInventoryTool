@@ -22,6 +22,7 @@ plt.switch_backend('Agg')  # Use non-interactive backend
 
 from asset_database import AssetDatabase
 from config_manager import ConfigManager
+from db_thread import run_async
 from error_handling import error_handler, safe_execute
 from performance_monitoring import performance_monitor
 from ui_components import SearchableDropdown, AssetDetailWindow, MultiAssetViewer, DatePicker
@@ -579,27 +580,39 @@ class ReportsAnalysisWindow:
     def _generate_audit_report(self):
         """Generate report of items not audited in X days."""
         try:
-            # Get parameters
             days = int(self.audit_days_var.get())
-            
-            # Calculate cutoff date
-            cutoff_date = datetime.now() - timedelta(days=days)
-            
-            # Clear previous results
-            for widget in self.audit_results_frame.winfo_children():
-                widget.destroy()
-            
-            # Pull candidate rows (no date filtering in SQL; handle formats in Python)
-            query = """
-                SELECT asset_no, manufacturer, model, serial_number, location, room, cubicle,
-                       audit_date, status, asset_type
-                FROM assets
-                WHERE is_deleted = 0
-            """
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number of days.")
+            return
+
+        # Clear previous results and show loading state
+        for widget in self.audit_results_frame.winfo_children():
+            widget.destroy()
+
+        loading_label = ctk.CTkLabel(self.audit_results_frame, text="Loading report…",
+                                     font=ctk.CTkFont(size=13))
+        loading_label.pack(pady=20)
+        self._set_busy(True)
+
+        query = """
+            SELECT asset_no, manufacturer, model, serial_number, location, room, cubicle,
+                   audit_date, status, asset_type
+            FROM assets
+            WHERE is_deleted = 0
+        """
+
+        def _fetch():
             with self.db.get_connection() as conn:
                 cursor = conn.execute(query)
-                results = cursor.fetchall()
-            
+                return cursor.fetchall()
+
+        def _on_done(results):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+
             base_columns = [
                 "Asset No", "Manufacturer", "Model", "Serial Number",
                 "Location", "Room", "Cubicle", "Last Audit", "Status", "Asset Type"
@@ -610,8 +623,7 @@ class ReportsAnalysisWindow:
                 df = pd.DataFrame(results, columns=base_columns)
 
                 def _parsed_date(val):
-                    parsed = parse_flexible_date(val)
-                    return parsed
+                    return parse_flexible_date(val)
 
                 df["_parsed_audit"] = df["Last Audit"].apply(_parsed_date)
 
@@ -622,19 +634,15 @@ class ReportsAnalysisWindow:
 
                 df["_days_since"] = df["_parsed_audit"].apply(_days_since)
 
-                # Keep rows with no audit or with days_since greater than threshold
                 mask = df["_parsed_audit"].isna() | (df["_days_since"] > days)
                 df = df[mask].copy()
 
-                # User-facing column with friendly text
                 def _display_days(val):
                     if val is None:
                         return "Never"
                     return str(val)
 
                 df["Days Since Audit"] = df["_days_since"].apply(_display_days)
-
-                # Drop helper columns
                 df.drop(columns=["_parsed_audit", "_days_since"], inplace=True)
 
                 self.audit_data = df
@@ -646,41 +654,42 @@ class ReportsAnalysisWindow:
             else:
                 self.audit_data = None
                 self.audit_export_btn.configure(state="disabled", fg_color="gray")
-            
-            # Display results
+
             if self.audit_data is None or self.audit_data.empty:
-                no_results_label = ctk.CTkLabel(self.audit_results_frame, 
-                                              text=f"✅ All assets have been audited within the last {days} days!",
-                                              font=ctk.CTkFont(size=16, weight="bold"),
-                                              text_color="green")
+                no_results_label = ctk.CTkLabel(self.audit_results_frame,
+                                                text=f"✅ All assets have been audited within the last {days} days!",
+                                                font=ctk.CTkFont(size=16, weight="bold"),
+                                                text_color="green")
                 no_results_label.pack(pady=20)
                 return
-            
-            # Results header with statistics
+
             stats_text = f"Assets not audited in the last {days} days: {len(self.audit_data)} found\n"
             if self.audit_data is not None:
-                # Add some statistics
                 by_location = self.audit_data.groupby('Location').size()
                 stats_text += f"Locations affected: {len(by_location)}\n"
                 stats_text += f"Most affected location: {by_location.idxmax()} ({by_location.max()} assets)"
-            
-            header_label = ctk.CTkLabel(self.audit_results_frame, 
-                                      text=stats_text,
-                                      font=ctk.CTkFont(size=14, weight="bold"))
+
+            header_label = ctk.CTkLabel(self.audit_results_frame,
+                                        text=stats_text,
+                                        font=ctk.CTkFont(size=14, weight="bold"))
             header_label.pack(pady=(10, 20))
-            
-            # Create results table
+
             self._create_results_table(
                 self.audit_results_frame,
                 self.audit_data[display_columns].values.tolist(),
                 display_columns,
             )
-            
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid number of days.")
-        except Exception as e:
-            error_handler.handle_exception(e, context="generating audit report",
-                                     parent_window=self.window)
+
+        def _on_error(exc):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+            error_handler.handle_exception(exc, context="generating audit report",
+                                           parent_window=self.window)
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _calculate_days_since_audit(self, audit_date_str, cutoff_date):
         """Calculate days since last audit."""
@@ -697,168 +706,149 @@ class ReportsAnalysisWindow:
     def _generate_labels_report(self):
         """Generate report of label requests based on date criteria."""
         try:
-            # Get parameters
+            # Get parameters (must happen on main thread)
             criteria = self.labels_criteria_var.get()
-            
-            # Clear previous results
-            for widget in self.labels_results_frame.winfo_children():
-                widget.destroy()
-            
-            # Get label output fields from config
+
+            # Build column list from config (fast, no DB)
             label_fields = self.config.get("label_output_fields", [])
-            
-            # Get column mapping to convert display names to database column names
+
+            # Resolve column mapping (DB call, but fast metadata query — keep sync for simplicity)
             column_mapping = self.db.get_dynamic_column_mapping(self.config.default_template_path)
-            
-            # Build list of database columns to select
+
             db_columns = []
             display_columns = []
-            
-            # Add configured fields
             for field in label_fields:
-                # Get the database column name for this display field
                 db_column = column_mapping.get(field)
                 if db_column:
                     db_columns.append(db_column)
                     display_columns.append(field)
                 else:
-                    # Try to generate safe column name if not in mapping
                     safe_column = self.db._generate_safe_column_name(field)
                     db_columns.append(safe_column)
                     display_columns.append(field)
-            
-            # Always add label_requested_date (hardcoded requirement)
+
             db_columns.append("label_requested_date")
             display_columns.append("Label Request Date")
-            
-            # Build SELECT clause
             select_clause = ", ".join(db_columns)
-            
-            # Build query based on criteria
+
+            # Build query and params (validate date before going async)
             if criteria == "All":
-                # Show all assets with label requests regardless of date
                 query = f"""
                     SELECT {select_clause}
-                    FROM assets 
-                    WHERE is_deleted = 0 
-                    AND label_requested_date IS NOT NULL 
+                    FROM assets
+                    WHERE is_deleted = 0
+                    AND label_requested_date IS NOT NULL
                     AND label_requested_date != ''
                     AND label_requested_date != '1901-01-01 00:00:00'
                     ORDER BY label_requested_date DESC
                 """
                 params = ()
+                date_str = None
             else:
-                # Get date parameter and parse it
                 date_str = self.labels_date_var.get()
                 selected_date = parse_flexible_date(date_str)
                 if not selected_date:
                     messagebox.showerror("Error", "Please enter a valid date in MM/DD/YYYY format.")
                     return
-                
-                # Convert to date only (ignore time)
+
                 target_date = selected_date.strftime("%Y-%m-%d")
-                
-                if criteria == "On":
-                    # Exact date match (ignore time component)
-                    query = f"""
-                        SELECT {select_clause}
-                        FROM assets 
-                        WHERE is_deleted = 0 
-                        AND label_requested_date IS NOT NULL 
-                        AND label_requested_date != ''
-                        AND label_requested_date != '1901-01-01 00:00:00'
-                        AND date(label_requested_date) = date(?)
-                        ORDER BY label_requested_date DESC
-                    """
-                    params = (target_date,)
-                elif criteria == "On or After":
-                    # On or after the selected date
-                    query = f"""
-                        SELECT {select_clause}
-                        FROM assets 
-                        WHERE is_deleted = 0 
-                        AND label_requested_date IS NOT NULL 
-                        AND label_requested_date != ''
-                        AND label_requested_date != '1901-01-01 00:00:00'
-                        AND date(label_requested_date) >= date(?)
-                        ORDER BY label_requested_date DESC
-                    """
-                    params = (target_date,)
-                elif criteria == "On or Before":
-                    # On or before the selected date
-                    query = f"""
-                        SELECT {select_clause}
-                        FROM assets 
-                        WHERE is_deleted = 0 
-                        AND label_requested_date IS NOT NULL 
-                        AND label_requested_date != ''
-                        AND label_requested_date != '1901-01-01 00:00:00'
-                        AND date(label_requested_date) <= date(?)
-                        ORDER BY label_requested_date DESC
-                    """
-                    params = (target_date,)
-            
-            # Execute query
+                op_map = {
+                    "On": "= date(?)",
+                    "On or After": ">= date(?)",
+                    "On or Before": "<= date(?)",
+                }
+                op = op_map.get(criteria, "= date(?)")
+                query = f"""
+                    SELECT {select_clause}
+                    FROM assets
+                    WHERE is_deleted = 0
+                    AND label_requested_date IS NOT NULL
+                    AND label_requested_date != ''
+                    AND label_requested_date != '1901-01-01 00:00:00'
+                    AND date(label_requested_date) {op}
+                    ORDER BY label_requested_date DESC
+                """
+                params = (target_date,)
+
+        except Exception as e:
+            error_handler.handle_exception(e, context="generating labels report",
+                                           parent_window=self.window)
+            return
+
+        # Clear previous results and show loading state
+        for widget in self.labels_results_frame.winfo_children():
+            widget.destroy()
+
+        loading_label = ctk.CTkLabel(self.labels_results_frame, text="Loading report…",
+                                     font=ctk.CTkFont(size=13))
+        loading_label.pack(pady=20)
+        self._set_busy(True)
+
+        # Snapshot closures for thread
+        _criteria = criteria
+        _date_str = date_str
+        _display_columns = list(display_columns)
+
+        def _fetch():
             with self.db.get_connection() as conn:
                 cursor = conn.execute(query, params)
-                results = cursor.fetchall()
-            
+                return cursor.fetchall()
+
+        def _on_done(results):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+
             if results:
-                # Create DataFrame with dynamic columns based on config
-                self.labels_data = pd.DataFrame(results, columns=display_columns)
-                
-                # Format the label requested date for display
+                self.labels_data = pd.DataFrame(results, columns=_display_columns)
                 if "Label Request Date" in self.labels_data.columns:
                     self.labels_data['Label Request Date'] = self.labels_data['Label Request Date'].apply(
-                        lambda x: self._format_label_date_for_display(x)
+                        self._format_label_date_for_display
                     )
-                
-                # Enable export button
                 self.labels_export_btn.configure(state="normal", fg_color=["#3B8ED0", "#1F6AA5"])
-                
-                # Enable barcode generation button
                 self.generate_barcode_btn.configure(state="normal", fg_color=["#3B8ED0", "#1F6AA5"])
             else:
                 self.labels_data = None
                 self.labels_export_btn.configure(state="disabled", fg_color="gray")
-                
-                # Disable barcode generation button
                 self.generate_barcode_btn.configure(state="disabled", fg_color="gray")
-            
-            # Display results
+
             if not results:
-                if criteria == "All":
+                if _criteria == "All":
                     no_results_text = "No assets have label requests in the database."
                 else:
-                    no_results_text = f"No assets have label requests {criteria.lower()} {date_str}."
-                
-                no_results_label = ctk.CTkLabel(self.labels_results_frame, 
-                                              text=f"ℹ️ {no_results_text}",
-                                              font=ctk.CTkFont(size=16, weight="bold"),
-                                              text_color="orange")
+                    no_results_text = f"No assets have label requests {_criteria.lower()} {_date_str}."
+                no_results_label = ctk.CTkLabel(self.labels_results_frame,
+                                                text=f"ℹ️ {no_results_text}",
+                                                font=ctk.CTkFont(size=16, weight="bold"),
+                                                text_color="orange")
                 no_results_label.pack(pady=20)
                 return
-            
-            # Results header with statistics
-            if criteria == "All":
+
+            if _criteria == "All":
                 stats_text = f"Total assets with label requests: {len(results)} found"
             else:
-                stats_text = f"Assets with label requests {criteria.lower()} {date_str}: {len(results)} found"
-            
-            # Add field info to stats
-            stats_text += f"\nShowing {len(display_columns)} fields: {', '.join(display_columns)}"
-            
-            header_label = ctk.CTkLabel(self.labels_results_frame, 
-                                      text=stats_text,
-                                      font=ctk.CTkFont(size=14, weight="bold"))
+                stats_text = f"Assets with label requests {_criteria.lower()} {_date_str}: {len(results)} found"
+            stats_text += f"\nShowing {len(_display_columns)} fields: {', '.join(_display_columns)}"
+
+            header_label = ctk.CTkLabel(self.labels_results_frame,
+                                        text=stats_text,
+                                        font=ctk.CTkFont(size=14, weight="bold"))
             header_label.pack(pady=(10, 20))
-            
-            # Create results table with dynamic columns
-            self._create_results_table(self.labels_results_frame, results, display_columns)
-            
-        except Exception as e:
-            error_handler.handle_exception(e, context="generating labels report",
-                                     parent_window=self.window)
+
+            self._create_results_table(self.labels_results_frame, results, _display_columns)
+
+        def _on_error(exc):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+            error_handler.handle_exception(exc, context="generating labels report",
+                                           parent_window=self.window)
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _format_label_date_for_display(self, date_str):
         """Format label requested date for display in results."""
@@ -955,137 +945,130 @@ class ReportsAnalysisWindow:
     @performance_monitor("Generate Duplicate Report")
     def _generate_duplicate_report(self):
         """Generate report of duplicate values in selected field."""
-        try:
-            # Get parameters
-            field_display_name = self.duplicate_field_var.get()
-            
-            if not field_display_name:
-                messagebox.showwarning("Warning", "Please select a field to check for duplicates.")
-                return
-            
-            # Find database field name
-            db_field_name = None
-            for field in self.db_fields:
-                if field['display_name'] == field_display_name:
-                    db_field_name = field['db_name']
-                    break
-            
-            if not db_field_name:
-                messagebox.showerror("Error", "Invalid field selected.")
-                return
-            
-            # Clear previous results
-            for widget in self.duplicate_results_frame.winfo_children():
-                widget.destroy()
-            
-            # Query database for duplicates
-            query = f"""
-                SELECT {db_field_name}, COUNT(*) as count,
-                       GROUP_CONCAT(asset_no) as asset_numbers,
-                       GROUP_CONCAT(manufacturer || ' ' || model) as assets
-                FROM assets 
-                WHERE is_deleted = 0 
-                AND {db_field_name} IS NOT NULL 
-                AND {db_field_name} != ''
-                GROUP BY {db_field_name}
-                HAVING COUNT(*) > 1
-                ORDER BY count DESC, {db_field_name}
-            """
-            
+        field_display_name = self.duplicate_field_var.get()
+
+        if not field_display_name:
+            messagebox.showwarning("Warning", "Please select a field to check for duplicates.")
+            return
+
+        db_field_name = None
+        for field in self.db_fields:
+            if field['display_name'] == field_display_name:
+                db_field_name = field['db_name']
+                break
+
+        if not db_field_name:
+            messagebox.showerror("Error", "Invalid field selected.")
+            return
+
+        # Clear previous results and show loading state
+        for widget in self.duplicate_results_frame.winfo_children():
+            widget.destroy()
+
+        loading_label = ctk.CTkLabel(self.duplicate_results_frame, text="Loading report…",
+                                     font=ctk.CTkFont(size=13))
+        loading_label.pack(pady=20)
+        self._set_busy(True)
+
+        query = f"""
+            SELECT {db_field_name}, COUNT(*) as count,
+                   GROUP_CONCAT(asset_no) as asset_numbers,
+                   GROUP_CONCAT(manufacturer || ' ' || model) as assets
+            FROM assets
+            WHERE is_deleted = 0
+            AND {db_field_name} IS NOT NULL
+            AND {db_field_name} != ''
+            GROUP BY {db_field_name}
+            HAVING COUNT(*) > 1
+            ORDER BY count DESC, {db_field_name}
+        """
+        _field_display = field_display_name
+
+        def _fetch():
             with self.db.get_connection() as conn:
                 cursor = conn.execute(query)
-                results = cursor.fetchall()
-            
-            # Convert to pandas DataFrame for export
+                return cursor.fetchall()
+
+        def _on_done(results):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+
             if results:
-                # Create detailed duplicate data for export
                 export_data = []
                 for row in results:
                     value, count, asset_nos, assets = row
                     asset_list = assets.split(',')
                     asset_no_list = asset_nos.split(',')
-                    
                     for asset_no, asset_desc in zip(asset_no_list, asset_list):
                         export_data.append({
-                            'Field': field_display_name,
+                            'Field': _field_display,
                             'Duplicate Value': value,
                             'Occurrences': count,
                             'Asset No': asset_no.strip(),
                             'Asset Description': asset_desc.strip()
                         })
-                
                 self.duplicate_data = pd.DataFrame(export_data)
-                
-                # Enable export button
                 self.duplicate_export_btn.configure(state="normal", fg_color=["#3B8ED0", "#1F6AA5"])
             else:
                 self.duplicate_data = None
                 self.duplicate_export_btn.configure(state="disabled", fg_color="gray")
-            
-            # Display results
+
             if not results:
-                # Hide duplicate value selection frame when no results
                 self.duplicate_value_frame.pack_forget()
                 self.duplicate_results = None
-                
-                no_results_label = ctk.CTkLabel(self.duplicate_results_frame, 
-                                              text=f"✅ No duplicate values found in {field_display_name}!",
-                                              font=ctk.CTkFont(size=16, weight="bold"),
-                                              text_color="green")
+                no_results_label = ctk.CTkLabel(self.duplicate_results_frame,
+                                                text=f"✅ No duplicate values found in {_field_display}!",
+                                                font=ctk.CTkFont(size=16, weight="bold"),
+                                                text_color="green")
                 no_results_label.pack(pady=20)
                 return
-            
-            # Results header with statistics
-            stats_text = f"Duplicate values in {field_display_name}: {len(results)} groups found\n"
-            total_duplicates = sum(row[1] for row in results)  # Sum of all counts
+
+            stats_text = f"Duplicate values in {_field_display}: {len(results)} groups found\n"
+            total_duplicates = sum(row[1] for row in results)
             stats_text += f"Total affected assets: {total_duplicates}"
-            
-            header_label = ctk.CTkLabel(self.duplicate_results_frame, 
-                                      text=stats_text,
-                                      font=ctk.CTkFont(size=14, weight="bold"))
+
+            header_label = ctk.CTkLabel(self.duplicate_results_frame,
+                                        text=stats_text,
+                                        font=ctk.CTkFont(size=14, weight="bold"))
             header_label.pack(pady=(10, 20))
-            
-            # Create results table - flatten duplicate data for table display
+
             table_data = []
             table_headers = ["Field", "Duplicate Value", "Count", "Asset No", "Asset Description"]
-            
             for row in results:
                 value, count, asset_nos, assets = row
                 asset_list = assets.split(',')
                 asset_no_list = asset_nos.split(',')
-                
                 for asset_no, asset_desc in zip(asset_no_list, asset_list):
-                    table_data.append([
-                        field_display_name,
-                        value,
-                        count,
-                        asset_no.strip(),
-                        asset_desc.strip()
-                    ])
-            
-            # Store results for duplicate value viewing and populate dropdown
+                    table_data.append([_field_display, value, count,
+                                       asset_no.strip(), asset_desc.strip()])
+
             self.duplicate_results = results
-            duplicate_values = [str(row[0]) for row in results]  # Extract duplicate values
-            
-            # Update dropdown with duplicate values and show the selection frame
+            duplicate_values = [str(row[0]) for row in results]
             try:
-                # Update the SearchableDropdown values
                 self.duplicate_value_dropdown.values_all = [""] + duplicate_values
                 if hasattr(self.duplicate_value_dropdown, 'values'):
                     self.duplicate_value_dropdown.values = [""] + duplicate_values
-                self.duplicate_value_var.set("")  # Clear selection
-                self.duplicate_value_frame.pack(pady=(10, 20))  # Show the frame
+                self.duplicate_value_var.set("")
+                self.duplicate_value_frame.pack(pady=(10, 20))
             except Exception as dropdown_error:
                 print(f"Warning: Could not update duplicate value dropdown: {dropdown_error}")
-                # Still show the frame even if dropdown update fails
                 self.duplicate_value_frame.pack(pady=(10, 20))
-            
-            # Create results table
+
             self._create_results_table(self.duplicate_results_frame, table_data, table_headers)
-            
-        except Exception as e:
-            error_handler.handle_exception(e, context="generating duplicate report",
-                                     parent_window=self.window)
+
+        def _on_error(exc):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+            error_handler.handle_exception(exc, context="generating duplicate report",
+                                           parent_window=self.window)
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _view_duplicate_assets(self):
         """Open MultiAssetViewer for all assets with the selected duplicate value."""
@@ -1139,148 +1122,144 @@ class ReportsAnalysisWindow:
     @performance_monitor("Generate Cubicle Analysis")
     def _generate_cubicle_analysis(self):
         """Generate cubicle analysis based on asset type and quantity criteria."""
+        asset_type = self.asset_type_var.get().strip()
+        comparison = self.comparison_var.get()
         try:
-            # Get parameters
-            asset_type = self.asset_type_var.get().strip()
-            comparison = self.comparison_var.get()
             quantity = int(self.quantity_var.get())
-            
-            if not asset_type:
-                messagebox.showerror("Error", "Please select an asset type.")
-                return
-            
-            # Clear previous results
-            for widget in self.cubicle_results_frame.winfo_children():
-                widget.destroy()
-            
-            # Build query based on comparison operator
-            if comparison == "exactly":
-                condition = "= ?"
-                description = f"exactly {quantity}"
-            elif comparison == "less than":
-                condition = "< ?"
-                description = f"less than {quantity}"
-            elif comparison == "greater than":
-                condition = "> ?"
-                description = f"greater than {quantity}"
-            elif comparison == "not equal to":
-                condition = "!= ?"
-                description = f"not equal to {quantity}"
-            else:
-                condition = "= ?"
-                description = f"exactly {quantity}"
-            
-            # Query to get cubicle counts for the specified asset type
-            query = f"""
-                WITH cubicle_counts AS (
-                    SELECT location, room, cubicle, 
-                           COUNT(*) as actual_count,
-                           GROUP_CONCAT(asset_no || ': ' || manufacturer || ' ' || model) as assets
-                    FROM assets 
-                    WHERE is_deleted = 0 
-                    AND location IS NOT NULL AND location != ''
-                    AND room IS NOT NULL AND room != ''
-                    AND cubicle IS NOT NULL AND cubicle != ''
-                    AND asset_type = ?
-                    GROUP BY location, room, cubicle
-                )
-                SELECT location, room, cubicle, actual_count, assets
-                FROM cubicle_counts
-                WHERE actual_count {condition}
-                
-                UNION
-                
-                SELECT DISTINCT a.location, a.room, a.cubicle, 0 as actual_count, '' as assets
-                FROM assets a
-                WHERE a.is_deleted = 0 
-                AND a.location IS NOT NULL AND a.location != ''
-                AND a.room IS NOT NULL AND a.room != ''
-                AND a.cubicle IS NOT NULL AND a.cubicle != ''
-                AND NOT EXISTS (
-                    SELECT 1 FROM assets a2 
-                    WHERE a2.location = a.location 
-                    AND a2.room = a.room 
-                    AND a2.cubicle = a.cubicle 
-                    AND a2.asset_type = ?
-                    AND a2.is_deleted = 0
-                )
-                AND 0 {condition}
-                
-                ORDER BY location, room, cubicle
-            """
-            
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid quantity number.")
+            return
+
+        if not asset_type:
+            messagebox.showerror("Error", "Please select an asset type.")
+            return
+
+        cond_map = {
+            "exactly": ("= ?", f"exactly {quantity}"),
+            "less than": ("< ?", f"less than {quantity}"),
+            "greater than": ("> ?", f"greater than {quantity}"),
+            "not equal to": ("!= ?", f"not equal to {quantity}"),
+        }
+        condition, description = cond_map.get(comparison, ("= ?", f"exactly {quantity}"))
+
+        query = f"""
+            WITH cubicle_counts AS (
+                SELECT location, room, cubicle,
+                       COUNT(*) as actual_count,
+                       GROUP_CONCAT(asset_no || ': ' || manufacturer || ' ' || model) as assets
+                FROM assets
+                WHERE is_deleted = 0
+                AND location IS NOT NULL AND location != ''
+                AND room IS NOT NULL AND room != ''
+                AND cubicle IS NOT NULL AND cubicle != ''
+                AND asset_type = ?
+                GROUP BY location, room, cubicle
+            )
+            SELECT location, room, cubicle, actual_count, assets
+            FROM cubicle_counts
+            WHERE actual_count {condition}
+
+            UNION
+
+            SELECT DISTINCT a.location, a.room, a.cubicle, 0 as actual_count, '' as assets
+            FROM assets a
+            WHERE a.is_deleted = 0
+            AND a.location IS NOT NULL AND a.location != ''
+            AND a.room IS NOT NULL AND a.room != ''
+            AND a.cubicle IS NOT NULL AND a.cubicle != ''
+            AND NOT EXISTS (
+                SELECT 1 FROM assets a2
+                WHERE a2.location = a.location
+                AND a2.room = a.room
+                AND a2.cubicle = a.cubicle
+                AND a2.asset_type = ?
+                AND a2.is_deleted = 0
+            )
+            AND 0 {condition}
+
+            ORDER BY location, room, cubicle
+        """
+
+        # Clear previous results and show loading state
+        for widget in self.cubicle_results_frame.winfo_children():
+            widget.destroy()
+
+        loading_label = ctk.CTkLabel(self.cubicle_results_frame, text="Loading report…",
+                                     font=ctk.CTkFont(size=13))
+        loading_label.pack(pady=20)
+        self._set_busy(True)
+
+        _at = asset_type
+        _cmp = comparison
+        _qty = quantity
+        _desc = description
+
+        def _fetch():
             with self.db.get_connection() as conn:
-                cursor = conn.execute(query, (asset_type, quantity, asset_type, quantity))
-                results = cursor.fetchall()
-            
+                cursor = conn.execute(query, (_at, _qty, _at, _qty))
+                return cursor.fetchall()
+
+        def _on_done(results):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+
             if not results:
-                no_results_label = ctk.CTkLabel(self.cubicle_results_frame, 
-                                              text=f"No cubicles found with {description} {asset_type}(s).",
-                                              font=ctk.CTkFont(size=16))
+                no_results_label = ctk.CTkLabel(self.cubicle_results_frame,
+                                                text=f"No cubicles found with {_desc} {_at}(s).",
+                                                font=ctk.CTkFont(size=16))
                 no_results_label.pack(pady=20)
                 return
-            
-            # Display header with statistics
-            header_text = f"Cubicles with {description} {asset_type}(s): {len(results)} found"
-            header_label = ctk.CTkLabel(self.cubicle_results_frame, 
-                                      text=header_text,
-                                      font=ctk.CTkFont(size=16, weight="bold"))
+
+            header_text = f"Cubicles with {_desc} {_at}(s): {len(results)} found"
+            header_label = ctk.CTkLabel(self.cubicle_results_frame,
+                                        text=header_text,
+                                        font=ctk.CTkFont(size=16, weight="bold"))
             header_label.pack(anchor="w", pady=(0, 15))
-            
-            # Create table data for display
+
             table_data = []
             table_headers = ["Location", "Room", "Cubicle", "Asset Type", "Expected", "Actual Count", "Asset Numbers"]
             export_data = []
-            
+
             for row in results:
                 location, room, cubicle, actual_count, assets = row
-                
-                # Extract asset numbers for display (only show asset numbers in table for performance)
+
                 asset_numbers = ""
                 if assets and assets.strip():
-                    asset_items = assets.split(',')
-                    asset_nos = []
-                    for asset_item in asset_items:
-                        if ':' in asset_item:
-                            asset_no = asset_item.split(':')[0].strip()
-                            asset_nos.append(asset_no)
+                    asset_nos = [item.split(':')[0].strip()
+                                 for item in assets.split(',') if ':' in item]
                     asset_numbers = ", ".join(asset_nos)
-                
-                # Add to table data
+
                 table_data.append([
-                    location,
-                    room,
-                    cubicle,
-                    asset_type,
-                    f"{comparison.title()} {quantity}",
-                    actual_count,
+                    location, room, cubicle, _at,
+                    f"{_cmp.title()} {_qty}", actual_count,
                     asset_numbers if asset_numbers else "None"
                 ])
-                
-                # Prepare export data (keep full asset details for export)
                 export_data.append({
-                    'Location': location,
-                    'Room': room,
-                    'Cubicle': cubicle,
-                    'Asset Type': asset_type,
-                    'Expected': f"{comparison.title()} {quantity}",
+                    'Location': location, 'Room': room, 'Cubicle': cubicle,
+                    'Asset Type': _at, 'Expected': f"{_cmp.title()} {_qty}",
                     'Actual Count': actual_count,
                     'Assets': assets if assets else 'None'
                 })
-            
-            # Create results table
+
             self._create_results_table(self.cubicle_results_frame, table_data, table_headers)
-            
-            # Store data for export and enable export button
+
             if export_data:
                 self.cubicle_data = export_data
                 self.cubicle_export_btn.configure(state="normal", fg_color=["#3B8ED0", "#1F6AA5"])
-            
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid quantity number.")
-        except Exception as e:
-            error_handler.handle_exception(e, context="generating cubicle analysis",
-                                     parent_window=self.window)
+
+        def _on_error(exc):
+            self._set_busy(False)
+            try:
+                loading_label.destroy()
+            except Exception:
+                pass
+            error_handler.handle_exception(exc, context="generating cubicle analysis",
+                                           parent_window=self.window)
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _display_anomaly(self, anomaly):
         """Display details of a cubicle anomaly."""
@@ -1973,6 +1952,13 @@ class ReportsAnalysisWindow:
         canvas = FigureCanvasTkAgg(fig, chart_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
+
+    def _set_busy(self, busy: bool):
+        """Toggle busy cursor on the reports window."""
+        try:
+            self.window.configure(cursor="watch" if busy else "")
+        except Exception:
+            pass
 
     def _on_closing(self):
         """Handle window closing."""

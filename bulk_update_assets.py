@@ -16,6 +16,7 @@ from performance_monitoring import performance_monitor
 from ui_components import SearchableDropdown, DatePicker, EmbeddedAssetDetail
 from field_utils import compute_db_fields_from_template, compute_dropdown_fields, compute_date_fields
 from edit_asset import EditAssetWindow
+from db_thread import run_async
 
 
 def _today_audit_date_str() -> str:
@@ -503,7 +504,7 @@ class BulkUpdateWindow:
             self._add_change_row()
     
     def _search_asset(self):
-        """Search for an asset based on the selected field and value."""
+        """Search for an asset based on the selected field and value (DB work off-thread)."""
         search_field_name = self.search_field.get()
         search_value = self.search_value.get().strip()
         
@@ -511,7 +512,6 @@ class BulkUpdateWindow:
             messagebox.showwarning("Search Error", "Please select a field and enter a search value.")
             return
         
-        # Find the database field name
         db_field_name = None
         for field in self.db_fields:
             if field['display_name'] == search_field_name:
@@ -521,28 +521,39 @@ class BulkUpdateWindow:
         if not db_field_name:
             messagebox.showerror("Search Error", "Invalid search field selected.")
             return
-        
+
         try:
-            # Search for the asset
-            assets = self.db.search_assets_by_field(db_field_name, search_value)
-            
+            self.window.configure(cursor="watch")
+        except Exception:
+            pass
+
+        def _fetch():
+            return self.db.search_assets_by_field(db_field_name, search_value)
+
+        def _on_done(assets):
+            try:
+                self.window.configure(cursor="")
+            except Exception:
+                pass
             if not assets:
-                # Show custom dialog with child asset option
                 self._show_add_new_asset_dialog(search_field_name, search_value)
                 return
-            
             if len(assets) > 1:
-                # Multiple assets found - show selection dialog
                 selected_asset = self._show_asset_selection_dialog(assets, search_field_name, search_value)
                 if selected_asset:
                     self._display_asset(selected_asset)
             else:
-                # Single asset found
                 self._display_asset(assets[0])
-                
-        except Exception as e:
-            messagebox.showerror("Search Error", f"Error searching for asset: {str(e)}")
-            print(f"Search error: {e}")
+
+        def _on_error(exc):
+            try:
+                self.window.configure(cursor="")
+            except Exception:
+                pass
+            messagebox.showerror("Search Error", f"Error searching for asset: {str(exc)}")
+            print(f"Search error: {exc}")
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _show_asset_selection_dialog(self, assets, search_field, search_value):
         """Show dialog to select from multiple matching assets."""
@@ -807,35 +818,50 @@ class BulkUpdateWindow:
         
         if not messagebox.askyesno("Confirm Changes", confirm_message):
             return
-        
+
+        # Snapshot data needed by the background thread
+        asset_id = self.selected_asset_data.id
+        changes_snapshot = dict(changes_to_apply)
+
         try:
-            # Apply changes to database
-            asset_id = self.selected_asset_data.id
-            self.db.update_asset(asset_id, changes_to_apply)
-            
-            # Refresh asset display by re-searching for the updated asset
-            updated_asset_dict = self.db.get_asset_by_id(asset_id)
+            self.window.configure(cursor="watch")
+        except Exception:
+            pass
+
+        def _write():
+            self.db.update_asset(asset_id, changes_snapshot)
+            return self.db.get_asset_by_id(asset_id)
+
+        def _on_done(updated_asset_dict):
+            try:
+                self.window.configure(cursor="")
+            except Exception:
+                pass
             if updated_asset_dict:
-                # Convert dictionary to object with attribute access
                 updated_asset = type('Asset', (), {})()
                 for key, value in updated_asset_dict.items():
                     setattr(updated_asset, key, value)
-                
                 self._display_asset(updated_asset)
-                self.selected_asset_data = updated_asset  # Update our reference
+                self.selected_asset_data = updated_asset
             else:
-                # If we can't get the updated asset by ID, try to re-search using current search criteria
                 self._refresh_current_search()
-            
-            messagebox.showinfo("Success", f"Asset updated successfully!\n\nUpdated fields:\n{changes_text}")
-            
-            # Clear search box and focus on it for next asset
+
+            messagebox.showinfo(
+                "Success",
+                f"Asset updated successfully!\n\nUpdated fields:\n{changes_text}",
+            )
             self.search_value.set("")
             self.search_entry.focus_set()
-            
-        except Exception as e:
-            messagebox.showerror("Update Error", f"Error updating asset: {str(e)}")
-            print(f"Update error: {e}")
+
+        def _on_error(exc):
+            try:
+                self.window.configure(cursor="")
+            except Exception:
+                pass
+            messagebox.showerror("Update Error", f"Error updating asset: {str(exc)}")
+            print(f"Update error: {exc}")
+
+        run_async(_write, _on_done, _on_error, self.window)
     
     def _get_display_name(self, db_field_name):
         """Get display name for a database field name."""

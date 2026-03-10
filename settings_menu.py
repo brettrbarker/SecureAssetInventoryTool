@@ -8,6 +8,7 @@ import shutil
 from datetime import datetime
 from asset_database import AssetDatabase
 from config_manager import ConfigManager
+from db_thread import run_async
 from error_handling import error_handler
 from performance_monitoring import performance_monitor
 from database_service import DatabaseService
@@ -573,30 +574,78 @@ class SettingsWindow:
     
     def _process_template_change(self, file_path):
         """Process the template change including database schema updates."""
+        current_db = self.config.get("database_path", "assets/asset_database.db")
+        db = AssetDatabase(current_db)
+
+        # Step 1: run compatibility check in background
         try:
-            current_db = self.config.get("database_path", "assets/asset_database.db")
-            db = AssetDatabase(current_db)
-            compatibility = db.verify_template_compatibility(file_path)
-            
-            # Check for errors in compatibility check
+            self.window.configure(cursor="watch")
+        except Exception:
+            pass
+
+        def _check_compat():
+            return db.verify_template_compatibility(file_path)
+
+        def _on_compat_done(compatibility):
+            try:
+                self.window.configure(cursor="")
+            except Exception:
+                pass
+
             if 'error' in compatibility:
                 messagebox.showerror("Error", f"Template compatibility check failed: {compatibility['error']}")
                 return
-            
-            # Get list of new fields that will be created
-            new_fields = [field for field in compatibility.get('field_details', []) if field.get('status') == 'will_create']
-            
+
+            new_fields = [field for field in compatibility.get('field_details', [])
+                          if field.get('status') == 'will_create']
+
             if new_fields and not self._confirm_schema_changes(new_fields):
                 return
-            
+
             if new_fields:
-                if not self._update_database_schema(db, file_path, new_fields):
-                    return
-            
-            self._apply_template_change(file_path)
-            
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Error updating database schema: {str(e)}")
+                # Step 2: run schema update in background
+                try:
+                    self.window.configure(cursor="watch")
+                except Exception:
+                    pass
+
+                def _do_schema():
+                    return db.update_schema_for_template(file_path)
+
+                def _on_schema_done(schema_updated):
+                    try:
+                        self.window.configure(cursor="")
+                    except Exception:
+                        pass
+                    if schema_updated:
+                        messagebox.showinfo("Success",
+                                            f"Database schema updated successfully.\n"
+                                            f"Added {len(new_fields)} new columns.")
+                        self._apply_template_change(file_path)
+                    else:
+                        messagebox.showerror("Error", "Failed to update database schema.")
+
+                def _on_schema_error(exc):
+                    try:
+                        self.window.configure(cursor="")
+                    except Exception:
+                        pass
+                    messagebox.showerror("Database Error",
+                                         f"Error updating database schema: {str(exc)}")
+
+                run_async(_do_schema, _on_schema_done, _on_schema_error, self.window)
+            else:
+                self._apply_template_change(file_path)
+
+        def _on_compat_error(exc):
+            try:
+                self.window.configure(cursor="")
+            except Exception:
+                pass
+            messagebox.showerror("Database Error",
+                                 f"Error updating database schema: {str(exc)}")
+
+        run_async(_check_compat, _on_compat_done, _on_compat_error, self.window)
     
     def _confirm_schema_changes(self, new_fields):
         """Show confirmation dialog for schema changes."""
@@ -622,35 +671,59 @@ class SettingsWindow:
         # Clear cached headers before reloading
         self._cached_headers = None
 
-        # Try to update the database schema to add any missing columns from the new template
         db_path = self.config.get("database_path", "")
         if db_path and os.path.exists(db_path):
             try:
-                db = AssetDatabase(db_path)
-                schema_result = db.update_schema_for_template(file_path)
-                if schema_result:
-                    # Reload headers and UI after schema update
-                    self._cached_headers = self._load_template_headers()
-                    self._reload_from_template()
-                    messagebox.showinfo("Template Updated", "Template file changed successfully.\nDatabase schema was checked and updated if needed.\nField categories have been refreshed.")
-                    return
-                else:
-                    # Even if schema update reported failure, continue to apply template in UI
-                    self._cached_headers = self._load_template_headers()
-                    self._reload_from_template()
-                    messagebox.showwarning("Template Updated", "Template file changed, but updating the database schema failed.\nPlease check the application log for details.")
-                    return
-            except Exception as e:
-                # Log and continue to apply the template in the UI
+                self.window.configure(cursor="watch")
+            except Exception:
+                pass
+
+            db = AssetDatabase(db_path)
+
+            def _do_schema():
+                return db.update_schema_for_template(file_path)
+
+            def _on_done(schema_result):
                 try:
-                    error_handler.logger.error(f"Error updating schema on template change: {e}")
+                    self.window.configure(cursor="")
                 except Exception:
                     pass
+                self._cached_headers = self._load_template_headers()
+                self._reload_from_template()
+                if schema_result:
+                    messagebox.showinfo("Template Updated",
+                                        "Template file changed successfully.\n"
+                                        "Database schema was checked and updated if needed.\n"
+                                        "Field categories have been refreshed.")
+                else:
+                    messagebox.showwarning("Template Updated",
+                                           "Template file changed, but updating the database schema failed.\n"
+                                           "Please check the application log for details.")
 
-        # If no valid database configured or schema update not attempted, still apply template to UI
-        self._cached_headers = self._load_template_headers()
-        self._reload_from_template()
-        messagebox.showinfo("Template Updated", "Template file changed successfully.\nDatabase schema has not been modified (no valid database configured).\nField categories have been refreshed.")
+            def _on_error(exc):
+                try:
+                    self.window.configure(cursor="")
+                except Exception:
+                    pass
+                try:
+                    error_handler.logger.error(f"Error updating schema on template change: {exc}")
+                except Exception:
+                    pass
+                self._cached_headers = self._load_template_headers()
+                self._reload_from_template()
+                messagebox.showinfo("Template Updated",
+                                    "Template file changed successfully.\n"
+                                    "Database schema has not been modified (no valid database configured).\n"
+                                    "Field categories have been refreshed.")
+
+            run_async(_do_schema, _on_done, _on_error, self.window)
+        else:
+            self._cached_headers = self._load_template_headers()
+            self._reload_from_template()
+            messagebox.showinfo("Template Updated",
+                                "Template file changed successfully.\n"
+                                "Database schema has not been modified (no valid database configured).\n"
+                                "Field categories have been refreshed.")
             
     def browse_output_directory(self):
         dir_path = filedialog.askdirectory(

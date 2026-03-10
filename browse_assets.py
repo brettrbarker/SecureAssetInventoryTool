@@ -16,6 +16,7 @@ from performance_monitoring import performance_monitor
 from database_service import database_service
 from ui_components import AssetDetailWindow, SearchableDropdown, DatePicker
 from date_utils import parse_flexible_date
+from db_thread import run_async
 import re
 
 
@@ -60,9 +61,11 @@ class BrowseAssetsWindow:
         self.selected_asset = None
         self._search_after_id = None
         
-        # Get database fields and unique values for dropdowns
+        # Get database fields synchronously (fast PRAGMA query)
         self.db_fields = self._get_database_fields()
-        self.unique_values = self._get_unique_field_values()
+        # Start with empty unique values; populated asynchronously below
+        self.unique_values = {}
+        self._searching = False  # guard against concurrent searches
         
         # Create a set of database field names that should use dropdowns
         # Convert config display names to database field names
@@ -74,6 +77,13 @@ class BrowseAssetsWindow:
         
         self._create_widgets()
         self._initialize_empty_state()
+
+        # Load dropdown unique values in background – used when user adds filter rows
+        run_async(
+            func=self._get_unique_field_values,
+            on_done=lambda vals: setattr(self, 'unique_values', vals),
+            tk_widget=self.window,
+        )
         
         # Load saved searches into listbox
         self._refresh_saved_searches_list()
@@ -176,6 +186,15 @@ class BrowseAssetsWindow:
         
         return unique_vals
     
+    # ──────────────────────── Busy-state helper ─────────────────────────── #
+
+    def _set_busy(self, busy: bool):
+        """Toggle busy cursor while a background DB operation is running."""
+        try:
+            self.window.configure(cursor="watch" if busy else "")
+        except Exception:
+            pass
+
     def _setup_keyboard_shortcuts(self):
         """Setup keyboard shortcuts for improved usability."""
         # Focus on first filter value entry when Ctrl+F is pressed
@@ -976,54 +995,76 @@ class BrowseAssetsWindow:
     
     @performance_monitor("Enhanced Asset Search")
     def _perform_search(self):
-        """Perform enhanced search with the new filter builder."""
-        try:
-            filters = self._build_search_filters()
-            
-            # If no filters, get all assets
+        """Perform enhanced search with the new filter builder (DB work runs off-thread)."""
+        # Guard: ignore if a search is already in flight
+        if self._searching:
+            return
+
+        # Snapshot all UI state on the main thread BEFORE launching the thread
+        filters = self._build_search_filters()
+        sort_field = self.sort_field.get()
+        sort_dir = self.sort_direction.get()
+        page_size = int(self.items_per_page.get())
+        current_page = self.current_page.get()
+
+        self._searching = True
+        self._set_busy(True)
+        self.status_label.configure(text="Searching…")
+
+        def _fetch():
+            # ── background thread: only DB / pure-Python work, no widget access ──
             if not filters or 'conditions' not in filters:
-                all_results = self.db.search_assets({}, limit=100000)
-            else:
-                # Apply filters with AND/OR logic
-                all_results = self._apply_custom_filters(filters)
-            
-            self.total_count = len(all_results)
-            
-            # Apply sorting
-            if self.sort_field.get() and self.sort_field.get() != "Select field":
-                sort_column = next((f['db_name'] for f in self.db_fields 
-                                  if f['display_name'] == self.sort_field.get()), None)
-                if sort_column:
-                    reverse = self.sort_direction.get() == "Descending"
-                    all_results.sort(key=lambda x: str(x.get(sort_column, '')).lower(), reverse=reverse)
-            
-            # Apply pagination
-            page_size = int(self.items_per_page.get())
-            current_page = self.current_page.get()
-            start_idx = (current_page - 1) * page_size
-            end_idx = start_idx + page_size
-            
-            # Get current page results
-            self.current_assets = all_results[start_idx:end_idx]
-            self.filtered_count = len(all_results)
-            
-            # Update display
-            self._populate_enhanced_table(self.current_assets)
-            self._update_pagination_info()
-            self._update_results_info()
-            
-            # Update status
-            if filters and 'conditions' in filters:
-                self.status_label.configure(text=f"Found {self.filtered_count} matching assets")
-            else:
-                self.status_label.configure(text="Showing all assets")
-            
-        except Exception as e:
-            messagebox.showerror("Search Error", f"Search failed: {e}")
+                return self.db.search_assets({}, limit=100000)
+            return self._apply_custom_filters(filters)
+
+        def _on_done(all_results):
+            # ── main thread: safe to update widgets ──
+            self._searching = False
+            self._set_busy(False)
+            try:
+                self.total_count = len(all_results)
+
+                # Sort (pure Python – fast)
+                if sort_field and sort_field != "Select field":
+                    sort_col = next(
+                        (f['db_name'] for f in self.db_fields if f['display_name'] == sort_field),
+                        None,
+                    )
+                    if sort_col:
+                        reverse = sort_dir == "Descending"
+                        all_results.sort(
+                            key=lambda x: str(x.get(sort_col, '')).lower(),
+                            reverse=reverse,
+                        )
+
+                # Paginate
+                start_idx = (current_page - 1) * page_size
+                self.current_assets = all_results[start_idx: start_idx + page_size]
+                self.filtered_count = len(all_results)
+
+                self._populate_enhanced_table(self.current_assets)
+                self._update_pagination_info()
+                self._update_results_info()
+
+                if filters and 'conditions' in filters:
+                    self.status_label.configure(
+                        text=f"Found {self.filtered_count} matching assets"
+                    )
+                else:
+                    self.status_label.configure(text="Showing all assets")
+            except Exception as e:
+                self.status_label.configure(text="Search error - check logs")
+                print(f"Search result processing error: {e}")
+
+        def _on_error(exc):
+            self._searching = False
+            self._set_busy(False)
+            messagebox.showerror("Search Error", f"Search failed: {exc}")
             self.status_label.configure(text="Search error - check logs")
-            print(f"Search error: {e}")
             import traceback
             traceback.print_exc()
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _apply_custom_filters(self, filters):
         """Apply custom filters with nested group logic to all assets."""
@@ -1412,98 +1453,100 @@ class BrowseAssetsWindow:
         self.content_frame.grid_columnconfigure(1, weight=0, minsize=0)
     
     def _initialize_empty_state(self):
-        """Initialize the interface with empty state - no data loaded."""
-        try:
-            # Get basic database stats without loading all assets
-            sample_assets = self.db.search_assets({}, limit=1)
-            if sample_assets:
-                # Count total assets efficiently
-                all_assets = self.db.search_assets({}, limit=10000)
-                self.total_db_count = len(all_assets)
-            else:
-                self.total_db_count = 0
-            
-            # Initialize empty state
-            self.current_assets = []
-            self.filtered_count = 0
-            
-            # Populate filter dropdowns
-            self._populate_filter_dropdowns()
-            
-            # Clear table and show welcome message
-            self._populate_enhanced_table([])
-            
-            # Update status
-            self.status_label.configure(text="Enter search criteria and click Search to find assets")
-            self.results_info_label.configure(text="Click Search to load assets")
-            self.stats_label.configure(text=f"Total: {self.total_db_count} assets in database")
-            
-            # Reset pagination
-            self.current_page.set(1)
-            self._update_pagination_info()
-            
-        except Exception as e:
-            error_msg = f"Failed to initialize: {e}"
-            messagebox.showerror("Initialization Error", error_msg)
+        """Initialize the interface with empty state - counts DB rows asynchronously."""
+        self.current_assets = []
+        self.filtered_count = 0
+        self.total_db_count = 0
+        self._populate_filter_dropdowns()
+        self._populate_enhanced_table([])
+        self.current_page.set(1)
+        self._update_pagination_info()
+        self.status_label.configure(text="Loading…")
+        self.results_info_label.configure(text="Click Search to load assets")
+        self.stats_label.configure(text="Counting assets…")
+
+        def _count():
+            sample = self.db.search_assets({}, limit=1)
+            if sample:
+                return len(self.db.search_assets({}, limit=100000))
+            return 0
+
+        def _on_count_done(total):
+            self.total_db_count = total
+            self.status_label.configure(
+                text="Enter search criteria and click Search to find assets"
+            )
+            self.stats_label.configure(
+                text=f"Total: {self.total_db_count} assets in database"
+            )
+
+        def _on_count_error(exc):
+            messagebox.showerror("Initialization Error", f"Failed to count assets: {exc}")
             self.status_label.configure(text="Initialization error - check logs")
+
+        run_async(_count, _on_count_done, _on_count_error, self.window)
     
     def _load_initial_data(self):
-        """Load initial data and setup interface."""
-        try:
-            # Get database field information
+        """Load initial data and setup interface (DB work runs off-thread)."""
+        self._set_busy(True)
+        self.status_label.configure(text="Loading all assets…")
+
+        priority_fields = [
+            'asset_no', 'asset_type', 'manufacturer', 'model',
+            'serial_number', 'status', 'location',
+        ]
+        page_size = int(self.items_per_page.get())
+
+        def _fetch():
+            # ── background thread ──────────────────────────────────────────
             if hasattr(self.db, 'get_table_fields'):
-                self.db_fields = self.db.get_table_fields()
+                db_fields = self.db.get_table_fields()
             else:
-                # Fallback to getting fields from a sample asset
-                sample_assets = self.db.search_assets({}, limit=1)
-                if sample_assets:
-                    sample_asset = sample_assets[0]
-                    self.db_fields = [
-                        {'db_name': key, 'display_name': key.replace('_', ' ').title()}
-                        for key in sample_asset.keys()
-                        if key != 'id'
+                sample = self.db.search_assets({}, limit=1)
+                if sample:
+                    db_fields = [
+                        {'db_name': k, 'display_name': k.replace('_', ' ').title()}
+                        for k in sample[0].keys() if k != 'id'
                     ]
                 else:
-                    self.db_fields = []
-            
-            # Prioritize important fields
-            priority_fields = ['asset_no', 'asset_type', 'manufacturer', 'model', 'serial_number', 'status', 'location']
-            prioritized_fields = []
-            remaining_fields = []
-            
-            for field in self.db_fields:
-                if field['db_name'] in priority_fields:
-                    prioritized_fields.append(field)
-                else:
-                    remaining_fields.append(field)
-            
-            # Sort priority fields by the order in priority_fields
-            prioritized_fields.sort(key=lambda x: priority_fields.index(x['db_name']) 
-                                  if x['db_name'] in priority_fields else len(priority_fields))
-            
-            self.db_fields = prioritized_fields + remaining_fields
-            
-            # Get total count for statistics
+                    db_fields = []
+
+            prio = [f for f in db_fields if f['db_name'] in priority_fields]
+            rest = [f for f in db_fields if f['db_name'] not in priority_fields]
+            prio.sort(key=lambda x: (
+                priority_fields.index(x['db_name']) if x['db_name'] in priority_fields else 999
+            ))
+            db_fields = prio + rest
+
             all_assets = self.db.search_assets({}, limit=10000)
-            self.total_db_count = len(all_assets)
-            
-            # Initial search (load all assets)
-            self.current_assets = all_assets[:int(self.items_per_page.get())]
-            self.filtered_count = len(all_assets)
-            
-            # Populate interface elements
-            self._populate_filter_dropdowns()
-            self._populate_enhanced_table(self.current_assets)
-            self._update_results_info()
-            self._update_pagination_info()
-            self._update_database_stats()
-            
-            self.status_label.configure(text="Ready")
-            
-        except Exception as e:
-            error_msg = f"Failed to load data: {e}"
-            messagebox.showerror("Load Error", error_msg)
+            return db_fields, all_assets
+
+        def _on_done(result):
+            # ── main thread ────────────────────────────────────────────────
+            self._set_busy(False)
+            db_fields, all_assets = result
+            try:
+                self.db_fields = db_fields
+                self.total_db_count = len(all_assets)
+                self.current_assets = all_assets[:page_size]
+                self.filtered_count = len(all_assets)
+
+                self._populate_filter_dropdowns()
+                self._populate_enhanced_table(self.current_assets)
+                self._update_results_info()
+                self._update_pagination_info()
+                self._update_database_stats()
+                self.status_label.configure(text="Ready")
+            except Exception as e:
+                self.status_label.configure(text="Load error - check logs")
+                print(f"Load data error: {e}")
+
+        def _on_error(exc):
+            self._set_busy(False)
+            messagebox.showerror("Load Error", f"Failed to load data: {exc}")
             self.status_label.configure(text="Load error - check logs")
+
+        run_async(_fetch, _on_done, _on_error, self.window)
     
     def _populate_filter_dropdowns(self):
         """Populate quick filter dropdowns with unique values."""

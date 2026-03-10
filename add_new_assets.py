@@ -13,6 +13,7 @@ from performance_monitoring import performance_monitor
 from ui_components import SearchableDropdown, DatePicker
 from field_utils import compute_db_fields_from_template, compute_dropdown_fields, compute_date_fields
 from date_utils import normalize_date_string
+from db_thread import run_async
 
 
 # AI Initial Prompt:
@@ -285,19 +286,11 @@ class AddNewAssetsWindow:
 
 
     def _load_template_and_build_form(self):
-        """Load template structure and build form using database for dropdown values."""
+        """Load template structure and build form (DB data loaded off-thread)."""
         if not os.path.exists(self.template_path):
             messagebox.showerror("Template Missing", f"Template file not found:\n{self.template_path}", parent=self.window)
             self._refocus()
             return
-        
-        # # Update database schema for new template fields
-        # try:
-        #     schema_updated = self.db.update_schema_for_template(self.template_path)
-        #     if schema_updated:
-        #         print(f"Database schema updated for template: {self.template_path}")
-        # except Exception as e:
-        #     print(f"Warning: Could not update database schema: {e}")
         
         try:
             with open(self.template_path, newline='', encoding='utf-8-sig') as f:
@@ -313,66 +306,94 @@ class AddNewAssetsWindow:
         
         self.headers = reader[0]
 
-        # AI Prompt for Modification:
-        # Get unique values from database for dropdown fields
-        # Instead of getting unique fields from the template for the dropdown lists,
-        # the program should get it from unique fields of all items in the database.
-        # Change the program to look at the database instead of the template file for unique fields.
-        # It should still only build dropdown lists for items specified in the settings menu like it does now.
-        # I want it to be dynamic, but I want it to populate the dropdown lists based off the unique values for the database items.
-        try:
-            # Get dynamic column mapping to know which database columns to query
-            column_mapping = self.db.get_dynamic_column_mapping(self.template_path)
-            
-            # For each dropdown-capable field present in the template, get unique values from the database
-            for field in self.dropdown_headers_in_template:
-                # Check if this field exists in our template headers first (it should, but keep the guard)
-                if field in self.headers:
-                    db_column = column_mapping.get(field)
-                    if db_column:
-                        # Get all unique values from the database for this column
-                        values = self.db.get_unique_values(db_column)
-                        if values:
-                            # Filter out empty/null values and sort
-                            filtered_values = [v for v in values if v and v.strip()]
-                            if filtered_values:
-                                self.unique_values[field] = sorted(filtered_values)
-                    else:
-                        print(f"Warning: No database column mapping found for dropdown field '{field}'")
-        except Exception as e:
-            print(f"Warning: Could not load dropdown values from database: {e}")
-            # Continue without dropdown values if database access fails
-        
-        # Split headers into required and additional (preserving original order)
+        # Split headers (pure Python – fast)
         required_headers = [h for h in self.headers if h in self.required_fields and h not in self.excluded_fields]
         additional_headers = [h for h in self.headers if h not in self.required_fields and h not in self.excluded_fields]
 
+        # Show loading indicator while DB queries run
+        loading_lbl = ctk.CTkLabel(
+            self.form_inner, text="Loading fields…",
+            font=ctk.CTkFont(size=14), text_color="gray"
+        )
+        loading_lbl.grid(row=0, column=0, columnspan=4, pady=40)
+
+        template_path = self.template_path
+        dropdown_headers = set(self.dropdown_headers_in_template)
+        all_non_excluded = required_headers + additional_headers
+
+        def _fetch_db_data():
+            """Background: gather unique dropdown values and multiline field set."""
+            unique_values: Dict[str, List[str]] = {}
+            multiline_fields: set = set()
+            try:
+                column_mapping = self.db.get_dynamic_column_mapping(template_path)
+                for field in dropdown_headers:
+                    if field in self.headers:
+                        db_column = column_mapping.get(field)
+                        if db_column:
+                            values = self.db.get_unique_values(db_column)
+                            if values:
+                                filtered = sorted([v for v in values if v and v.strip()])
+                                if filtered:
+                                    unique_values[field] = filtered
+            except Exception as e:
+                print(f"Warning: Could not load dropdown values from database: {e}")
+            try:
+                for header in all_non_excluded:
+                    if self.db.should_field_be_multiline(header, template_path):
+                        multiline_fields.add(header)
+            except Exception as e:
+                print(f"Warning: Could not determine multiline fields: {e}")
+            return unique_values, multiline_fields
+
+        def _on_fetch_done(result):
+            """Main thread: discard placeholder and build all widgets."""
+            unique_values, multiline_fields = result
+            try:
+                loading_lbl.destroy()
+            except Exception:
+                pass
+            self.unique_values = unique_values
+            self._build_form_widgets(required_headers, additional_headers, multiline_fields)
+
+        def _on_fetch_error(exc):
+            try:
+                loading_lbl.configure(text=f"Error loading fields: {exc}")
+            except Exception:
+                pass
+            print(f"Error loading form data: {exc}")
+
+        run_async(_fetch_db_data, _on_fetch_done, _on_fetch_error, self.window)
+
+    def _build_form_widgets(self, required_headers: List[str], additional_headers: List[str],
+                            multiline_fields: set):
+        """Build form widgets on the main thread after DB data has been loaded."""
         current_row = 0
 
-        # Section: Required Fields
         if required_headers:
             heading_req = ctk.CTkLabel(self.form_inner, text="Required Fields", anchor="w", font=ctk.CTkFont(size=16, weight="bold"))
             heading_req.grid(row=current_row, column=0, columnspan=4, sticky="we", padx=8, pady=(8,4))
             current_row += 1
-            current_row = self._create_field_section(required_headers, start_row=current_row)
-            # Divider line
+            current_row = self._create_field_section(required_headers, start_row=current_row, multiline_fields=multiline_fields)
             divider = ctk.CTkFrame(self.form_inner, height=2)
             divider.grid(row=current_row, column=0, columnspan=4, sticky="we", padx=4, pady=(6,10))
             current_row += 1
 
-        # Section: Additional Fields
         if additional_headers:
             heading_add = ctk.CTkLabel(self.form_inner, text="Additional Fields", anchor="w", font=ctk.CTkFont(size=16, weight="bold"))
             heading_add.grid(row=current_row, column=0, columnspan=4, sticky="we", padx=8, pady=(0,4))
             current_row += 1
-            current_row = self._create_field_section(additional_headers, start_row=current_row)
+            self._create_field_section(additional_headers, start_row=current_row, multiline_fields=multiline_fields)
 
-        # Configure grid weight for resizing (input columns 1 and 3)
         self.form_inner.columnconfigure(1, weight=1)
         self.form_inner.columnconfigure(3, weight=1)
 
-    def _create_field_section(self, headers: List[str], start_row: int) -> int:
+    def _create_field_section(self, headers: List[str], start_row: int,
+                              multiline_fields: set = None) -> int:
         """Create a two-column (label+input pairs) section for given headers.
+
+        multiline_fields: pre-computed set of field names to render as CTkTextbox.
+        If None, falls back to querying the DB inline (legacy / non-async path).
 
         Returns the next available row index after placing widgets.
         """
@@ -393,26 +414,30 @@ class AddNewAssetsWindow:
                 self.dropdown_value_vars[header] = var
                 self.widgets[header] = opt
             elif "date" in header.lower():
-                # Use DatePicker for any field containing "date"
                 var = ctk.StringVar(value="")
                 date_picker = DatePicker(self.form_inner, variable=var)
                 date_picker.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
                 self.dropdown_value_vars[header] = var
                 self.widgets[header] = date_picker
-                # Pre-populate audit date with today's date
                 if header.lower() == AUDIT_DATE_HEADER:
                     var.set(_today_audit_date_str())
-            elif self.db.should_field_be_multiline(header, self.template_path):
-                # Use CTkTextbox for multiline fields (notes, descriptions, etc.)
-                textbox = ctk.CTkTextbox(self.form_inner, height=80)
-                textbox.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
-                self.widgets[header] = textbox
             else:
-                entry = ctk.CTkEntry(self.form_inner)
-                entry.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
-                self.widgets[header] = entry
+                # Determine multiline: use precomputed set if available, else query DB
+                is_multiline = (
+                    header in multiline_fields
+                    if multiline_fields is not None
+                    else self.db.should_field_be_multiline(header, self.template_path)
+                )
+                if is_multiline:
+                    textbox = ctk.CTkTextbox(self.form_inner, height=80)
+                    textbox.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
+                    self.widgets[header] = textbox
+                else:
+                    entry = ctk.CTkEntry(self.form_inner)
+                    entry.grid(row=row, column=base_col + 1, sticky="we", padx=8, pady=4)
+                    self.widgets[header] = entry
 
-        rows_used = (len(headers) + 1) // 2  # number of grid rows consumed
+        rows_used = (len(headers) + 1) // 2
         return start_row + rows_used
 
     def _clear_form_widgets(self):
