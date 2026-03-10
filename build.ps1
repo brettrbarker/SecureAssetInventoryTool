@@ -6,6 +6,17 @@ Write-Host "Asset Management System - Build Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# ── Run unit tests before building ────────────────────────────────────────────
+Write-Host "Running unit tests before build..." -ForegroundColor Cyan
+& "$PSScriptRoot\run_tests.ps1"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "" 
+    Write-Host "Build aborted: unit tests failed." -ForegroundColor Red
+    Write-Host "Fix failing tests and try again." -ForegroundColor Yellow
+    exit 1
+}
+Write-Host ""
+
 # Check if virtual environment is activated
 if (-not $env:VIRTUAL_ENV) {
     Write-Host "WARNING: Virtual environment not detected!" -ForegroundColor Yellow
