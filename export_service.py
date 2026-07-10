@@ -6,7 +6,7 @@ Centralizes export operations to avoid code duplication between main menu and se
 import csv
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from tkinter import messagebox, filedialog
 from typing import Optional, Dict, Any, List
 import customtkinter as ctk
@@ -173,6 +173,25 @@ class ExportService:
                 messagebox.showinfo("Export Complete", 
                                   f"Successfully exported {len(assets)} assets to:\n{export_path}", 
                                   parent=parent_window)
+                # If audit export requested, attempt to export audit entries
+                if export_options.get("export_audit_log"):
+                    try:
+                        base, ext = os.path.splitext(export_path)
+                        audit_path = f"{base}_audit{ext}"
+
+                        # Build basic audit filters based on selected export scope
+                        audit_filters: Dict[str, Any] = {}
+                        ftype = filter_option.get("type")
+                        if ftype in ("modified", "added", "both"):
+                            days = filter_option.get("days", 1)
+                            cutoff = datetime.now() - timedelta(days=days)
+                            audit_filters['date_from'] = cutoff.isoformat()
+
+                        written = database_service.export_audit_log_to_csv(audit_path, audit_filters)
+                        messagebox.showinfo("Audit Export", f"Wrote {written} audit entries to:\n{audit_path}", parent=parent_window)
+                    except Exception as e:
+                        messagebox.showwarning("Audit Export Failed", f"Failed to export audit log:\n{e}", parent=parent_window)
+
                 return True
                 
             except Exception as e:
@@ -450,6 +469,13 @@ class ExportService:
                                                variable=filter_manufacturer_var)
         filter_manufacturer_cb.pack(anchor="w", padx=20, pady=10)
         
+        # Option: Export audit log alongside the exported assets
+        export_audit_log_var = ctk.BooleanVar(value=False)
+        export_audit_log_cb = ctk.CTkCheckBox(export_options_frame,
+                              text="Also export audit log for these assets",
+                              variable=export_audit_log_var)
+        export_audit_log_cb.pack(anchor="w", padx=20, pady=10)
+        
         # Add footnote for the asterisked options
         footnote_label = ctk.CTkLabel(export_options_frame, 
                                      text="* Recommended if using SW Help Desk Asset System",
@@ -473,7 +499,8 @@ class ExportService:
             export_options = {
                 "filter_asset_number_for_non_imported": export_asset_number_var.get(),
                 "filter_sync_keys_from_imported": filter_sync_keys_var.get(),
-                "filter_manufacturer_from_imported": filter_manufacturer_var.get()
+                "filter_manufacturer_from_imported": filter_manufacturer_var.get(),
+                "export_audit_log": export_audit_log_var.get()
             }
             
             if choice in ["modified", "added", "both"]:

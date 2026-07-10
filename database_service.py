@@ -306,5 +306,16 @@ class DatabaseService:
             print(f"Error getting database statistics: {e}")
             return {}
 
+    def export_audit_log_to_csv(self, output_path: str, filters: Dict[str, Any] = None) -> int:
+        """Export audit log entries to CSV via the underlying AssetDatabase.
+
+        Returns the number of rows written.
+        """
+        try:
+            return self.db.export_audit_log(output_path, filters)
+        except Exception as e:
+            print(f"Error exporting audit log: {e}")
+            return 0
+
 # Singleton instance for global access
 database_service = DatabaseService()

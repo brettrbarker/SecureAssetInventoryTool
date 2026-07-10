@@ -826,6 +826,90 @@ class AssetDatabase:
                 })
             
             return history
+
+    def get_all_audit_entries(self, filters: Dict[str, Any] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch audit log entries with optional filters.
+
+        Supported filters (keys):
+            - asset_id: int
+            - action: str
+            - field_name: str
+            - changed_by: str
+            - date_from: ISO datetime string (inclusive)
+            - date_to: ISO datetime string (inclusive)
+            - asset_no: str (matches assets.asset_no)
+        Returns a list of dicts with joined asset info when available.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            query = (
+                "SELECT l.id, l.asset_id, a.asset_no, a.system_name, l.action, l.field_name, "
+                "l.old_value, l.new_value, l.changed_by, l.change_date "
+                "FROM asset_audit_log l LEFT JOIN assets a ON a.id = l.asset_id WHERE 1=1"
+            )
+            params: List[Any] = []
+
+            if filters:
+                if 'asset_id' in filters and filters['asset_id'] is not None:
+                    query += " AND l.asset_id = ?"
+                    params.append(filters['asset_id'])
+                if 'action' in filters and filters['action']:
+                    query += " AND l.action = ?"
+                    params.append(filters['action'])
+                if 'field_name' in filters and filters['field_name']:
+                    query += " AND l.field_name = ?"
+                    params.append(filters['field_name'])
+                if 'changed_by' in filters and filters['changed_by']:
+                    query += " AND l.changed_by = ?"
+                    params.append(filters['changed_by'])
+                if 'date_from' in filters and filters['date_from']:
+                    query += " AND l.change_date >= ?"
+                    params.append(filters['date_from'])
+                if 'date_to' in filters and filters['date_to']:
+                    query += " AND l.change_date <= ?"
+                    params.append(filters['date_to'])
+                if 'asset_no' in filters and filters['asset_no']:
+                    query += " AND a.asset_no = ?"
+                    params.append(filters['asset_no'])
+
+            query += " ORDER BY l.change_date DESC"
+
+            if limit:
+                query += " LIMIT ?"
+                params.append(limit)
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in rows]
+
+    def export_audit_log(self, output_path: str, filters: Dict[str, Any] = None, limit: Optional[int] = None) -> int:
+        """Export audit log entries to CSV. Returns number of rows written.
+
+        Optional `limit` restricts number of rows written.
+        """
+        entries = self.get_all_audit_entries(filters, limit)
+        if not entries:
+            return 0
+
+        # Ensure output directory exists
+        out_dir = os.path.dirname(output_path) or '.'
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Normalize headers order
+        headers = ['id', 'asset_id', 'asset_no', 'system_name', 'action', 'field_name', 'old_value', 'new_value', 'changed_by', 'change_date']
+
+        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=headers)
+            writer.writeheader()
+            for entry in entries:
+                # Ensure all headers present
+                row = {h: entry.get(h, '') for h in headers}
+                writer.writerow(row)
+
+        return len(entries)
     
     def get_unique_values(self, field: str) -> List[str]:
         """Get unique values for a field to populate dropdowns."""
